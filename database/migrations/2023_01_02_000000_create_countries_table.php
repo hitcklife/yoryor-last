@@ -1,4 +1,4 @@
-2025_02_03_232355_create_profiles_table.php<?php
+<?php
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;

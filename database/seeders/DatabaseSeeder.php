@@ -13,11 +13,17 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // User::factory(10)->create();
+        // Run the CountrySeeder first since UserSeeder depends on countries
+        $this->call(CountrySeeder::class);
 
+        // Create 500 dummy users with profiles and photos
+        $this->call(UserSeeder::class);
+
+        // Create a test user for development
         User::factory()->create([
-            'name' => 'Test User',
             'email' => 'test@example.com',
+            'password' => bcrypt('password'),
+            'registration_completed' => true,
         ]);
     }
 }
