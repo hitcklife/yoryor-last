@@ -14,7 +14,15 @@ return new class extends Migration
         Schema::create('chats', function (Blueprint $table) {
             $table->id();
             $table->string('type')->default('private'); // 'private' or 'group'
+            $table->string('name')->nullable(); // For group chats
+            $table->string('description')->nullable(); // For group chats
+            $table->timestamp('last_activity_at')->nullable();
+            $table->boolean('is_active')->default(true);
             $table->timestamps();
+
+            // Indexes for performance
+            $table->index(['type', 'is_active']);
+            $table->index('last_activity_at');
         });
     }
 

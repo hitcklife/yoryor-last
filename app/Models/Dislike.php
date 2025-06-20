@@ -10,10 +10,7 @@ class Dislike extends Model
 {
     use HasFactory;
 
-    protected $fillable = [
-        'user_id',
-        'disliked_user_id'
-    ];
+    protected $fillable = ['user_id', 'disliked_user_id'];
 
     public function user(): BelongsTo
     {

@@ -30,15 +30,39 @@ class AuthService
                 'email' => $data['email'] ?? null,
                 'phone' => $data['phone'] ?? null,
                 'password' => Hash::make($data['password']),
-                'registration_completed' => true
+                'registration_completed' => true,
+                'is_private' => $data['is_private'] ?? false
             ]);
+
+            // Find country if provided
+            $country_id = null;
+            if (!empty($data['country'])) {
+                $country = \App\Models\Country::where('name', $data['country'])
+                    ->orWhere('code', $data['country'])
+                    ->first();
+
+                if ($country) {
+                    $country_id = $country->id;
+                }
+            }
+
+            // Calculate age from date of birth
+            $age = null;
+            if (!empty($data['date_of_birth'])) {
+                $birthDate = new \DateTime($data['date_of_birth']);
+                $today = new \DateTime('today');
+                $age = $birthDate->diff($today)->y;
+            }
 
             // Create profile
             $user->profile()->create([
                 'first_name' => $data['first_name'],
                 'last_name' => $data['last_name'],
                 'date_of_birth' => $data['date_of_birth'],
-                'gender' => $data['gender']
+                'gender' => $data['gender'],
+                'country_id' => $country_id,
+                'age' => $age,
+                'profile_completed_at' => now()
             ]);
 
             // Create default preferences
@@ -133,8 +157,29 @@ class AuthService
             // Update user
             $user->update([
                 'email' => $data['email'] ?? $user->email,
-                'registration_completed' => true
+                'registration_completed' => true,
+                'is_private' => $data['is_private'] ?? $user->is_private
             ]);
+
+            // Find country if provided
+            $country_id = null;
+            if (!empty($data['country'])) {
+                $country = \App\Models\Country::where('name', $data['country'])
+                    ->orWhere('code', $data['country'])
+                    ->first();
+
+                if ($country) {
+                    $country_id = $country->id;
+                }
+            }
+
+            // Calculate age from date of birth
+            $age = null;
+            if (!empty($data['dateOfBirth'])) {
+                $birthDate = new \DateTime($data['dateOfBirth']);
+                $today = new \DateTime('today');
+                $age = $birthDate->diff($today)->y;
+            }
 
             // Create or update profile
             $user->profile()->updateOrCreate(
@@ -144,14 +189,15 @@ class AuthService
                     'last_name' => $data['lastName'],
                     'date_of_birth' => $data['dateOfBirth'],
                     'gender' => $data['gender'],
-                    'status' => $data['status'] ?? null,
-                    'occupation' => $data['occupation'] ?? null,
                     'profession' => $data['profession'] ?? null,
                     'bio' => $data['bio'] ?? null,
                     'interests' => $data['interests'] ?? null,
-                    'country_code' => $data['countryCode'] ?? null,
                     'state' => $data['state'] ?? null,
-                    'city' => $data['city'] ?? null
+                    'city' => $data['city'] ?? null,
+                    'country_id' => $country_id,
+                    'age' => $age,
+                    'looking_for' => $data['looking_for'] ?? 'all',
+                    'profile_completed_at' => now()
                 ]
             );
 

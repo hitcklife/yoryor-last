@@ -14,16 +14,25 @@ return new class extends Migration
         Schema::create('user_photos', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
-            $table->string('photo_url');
+            $table->string('original_url', 500); // Original high-res photo
+            $table->string('thumbnail_url', 500)->nullable(); // Optimized thumbnail
+            $table->string('medium_url', 500)->nullable(); // Medium resolution
             $table->boolean('is_profile_photo')->default(false);
-            $table->unsignedInteger('order')->default(0); // Added index for sorting efficiency
+            $table->unsignedTinyInteger('order')->default(0); // 0-5 for dating apps
             $table->boolean('is_private')->default(false);
+            $table->boolean('is_verified')->default(false); // For photo verification
+            $table->enum('status', ['pending', 'approved', 'rejected'])->default('pending');
+            $table->string('rejection_reason')->nullable();
+            $table->json('metadata')->nullable(); // EXIF data, dimensions, etc.
             $table->timestamp('uploaded_at')->useCurrent();
             $table->softDeletes(); // Added soft delete support
             $table->timestamps();
 
-            $table->index('uploaded_at');
-            $table->index('order');
+            // Optimized indexes
+            $table->index(['user_id', 'is_profile_photo', 'status'], 'photos_profile_index');
+            $table->index(['user_id', 'order', 'status'], 'photos_gallery_index');
+            $table->index(['status', 'uploaded_at'], 'photos_moderation_index');
+            $table->index('is_verified');
         });
     }
 

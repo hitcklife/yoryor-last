@@ -13,15 +13,22 @@ return new class extends Migration
     {
         Schema::create('chat_users', function (Blueprint $table) {
             $table->id();
-            $table->unsignedBigInteger('chat_id');
-            $table->unsignedBigInteger('user_id');
+            $table->foreignId('chat_id')->constrained('chats')->onDelete('cascade');
+            $table->foreignId('user_id')->constrained('users')->onDelete('cascade');
+
+            // Chat-specific user settings
+            $table->boolean('is_muted')->default(false);
+            $table->timestamp('last_read_at')->nullable();
+            $table->timestamp('joined_at')->useCurrent();
+            $table->timestamp('left_at')->nullable();
+            $table->string('role')->default('member'); // 'admin', 'member' for group chats
 
             $table->timestamps();
 
-            $table->foreign('chat_id')->references('id')->on('chats')->onDelete('cascade');
-            $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade');
-
+            // Unique constraint and indexes
             $table->unique(['chat_id', 'user_id']);
+            $table->index(['user_id', 'is_muted']);
+            $table->index(['chat_id', 'left_at']);
         });
     }
 

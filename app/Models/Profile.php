@@ -16,18 +16,19 @@ class Profile extends Model
         'last_name',
         'gender',
         'date_of_birth',
+        'age',
         'city',
         'state',
         'province',
         'country_id',
-        'country_code',
         'latitude',
         'longitude',
-        'status',
-        'occupation',
         'profession',
         'bio',
-        'interests'
+        'interests',
+        'looking_for',
+        'profile_views',
+        'profile_completed_at'
     ];
 
     /**
@@ -39,8 +40,11 @@ class Profile extends Model
         'interests' => 'json',
         'date_of_birth' => 'date',
         'latitude' => 'decimal:7',
-        'longitude' => 'decimal:7'
-
+        'longitude' => 'decimal:7',
+        'age' => 'integer',
+        'profile_views' => 'integer',
+        'profile_completed_at' => 'datetime',
+        'looking_for' => 'string'
     ];
 
     public function user(): BelongsTo

@@ -275,6 +275,8 @@ class AuthController extends Controller
             'last_name' => ['required', 'string', 'max:50'],
             'date_of_birth' => ['required', 'date', 'before:-18 years'],
             'gender' => ['required', 'in:male,female,non-binary,other'],
+            'country' => ['nullable', 'string'],
+            'is_private' => ['nullable', 'boolean'],
         ]);
 
         if ($validator->fails()) {

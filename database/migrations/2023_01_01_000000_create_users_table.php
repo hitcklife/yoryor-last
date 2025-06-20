@@ -26,7 +26,13 @@ return new class extends Migration
             $table->string('password', 60)->nullable();
             $table->rememberToken();
             $table->string('profile_photo_path', 1024)->nullable();
+            $table->timestamp('last_active_at')->nullable(); // New field for activity tracking
             $table->timestamps();
+
+            // Composite indexes for dating app queries
+            $table->index(['registration_completed', 'disabled_at', 'is_private'], 'users_active_profiles_index');
+            $table->index(['last_active_at', 'registration_completed'], 'users_activity_index');
+            $table->index('created_at'); // For new user queries
         });
     }
 

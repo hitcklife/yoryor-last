@@ -117,26 +117,31 @@ class ChatController extends Controller
             $user = $request->user();
             $perPage = $request->input('per_page', 10);
 
-            // Get all chats where the user is either user_id_1 or user_id_2
-            $chats = Chat::where('user_id_1', $user->id)
-                ->orWhere('user_id_2', $user->id)
-                ->with(['lastMessage'])
+            // Use the relationship defined in the User model
+            $chats = $user->chats()
+                ->with(['lastMessage', 'users' => function($query) use ($user) {
+                    // Eager load other users in the chat with their profiles and photos
+                    $query->where('users.id', '!=', $user->id)
+                          ->with(['profile', 'profilePhoto']);
+                }])
+                ->withCount(['messages as unread_count' => function($query) use ($user) {
+                    // Count unread messages in a single query
+                    $query->where('sender_id', '!=', $user->id)
+                          ->whereDoesntHave('messageReads', function($q) use ($user) {
+                              $q->where('user_id', $user->id);
+                          });
+                }])
+                ->orderBy('updated_at', 'desc')
                 ->paginate($perPage);
 
-            // Transform the chats to include the other user and unread count
+            // Transform the chats to include the other user
             $chats->getCollection()->transform(function ($chat) use ($user) {
-                // Determine the other user in the chat
-                $otherUserId = $chat->user_id_1 == $user->id ? $chat->user_id_2 : $chat->user_id_1;
-                $otherUser = User::with('profile', 'profilePhoto')->find($otherUserId);
-
-                // Count unread messages
-                $unreadCount = Message::where('chat_id', $chat->id)
-                    ->where('sender_id', '!=', $user->id)
-                    ->where('read', false)
-                    ->count();
-
+                // Get the other user from the eager loaded relationship
+                $otherUser = $chat->users->first();
                 $chat->other_user = $otherUser;
-                $chat->unread_count = $unreadCount;
+
+                // Remove the users collection to clean up the response
+                unset($chat->users);
 
                 return $chat;
             });
@@ -286,31 +291,52 @@ class ChatController extends Controller
             $user = $request->user();
             $perPage = $request->input('per_page', 20);
 
-            $chat = Chat::findOrFail($id);
+            // Find the chat through the user's relationship to ensure authorization
+            $chat = $user->chats()
+                ->with(['users' => function($query) use ($user) {
+                    // Eager load other users in the chat with their profiles and photos
+                    $query->where('users.id', '!=', $user->id)
+                          ->with(['profile', 'profilePhoto']);
+                }])
+                ->findOrFail($id);
 
-            // Check if the user is part of this chat
-            if ($chat->user_id_1 != $user->id && $chat->user_id_2 != $user->id) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'You are not authorized to view this chat'
-                ], 403);
-            }
-
-            // Determine the other user in the chat
-            $otherUserId = $chat->user_id_1 == $user->id ? $chat->user_id_2 : $chat->user_id_1;
-            $otherUser = User::with('profile', 'profilePhoto')->find($otherUserId);
+            // Get the other user from the eager loaded relationship
+            $otherUser = $chat->users->first();
             $chat->other_user = $otherUser;
 
+            // Remove the users collection to clean up the response
+            unset($chat->users);
+
             // Get messages for this chat, ordered by created_at in descending order (newest first)
+            // Eager load sender information for each message
             $messages = Message::where('chat_id', $chat->id)
+                ->with('sender:id,email')
                 ->orderBy('created_at', 'desc')
                 ->paginate($perPage);
 
-            // Mark unread messages as read if they were sent by the other user
-            Message::where('chat_id', $chat->id)
+            // Get IDs of unread messages sent by others
+            $unreadMessageIds = Message::where('chat_id', $chat->id)
                 ->where('sender_id', '!=', $user->id)
-                ->where('read', false)
-                ->update(['read' => true]);
+                ->whereDoesntHave('messageReads', function($query) use ($user) {
+                    $query->where('user_id', $user->id);
+                })
+                ->pluck('id')
+                ->toArray();
+
+            // Mark messages as read in a transaction
+            if (!empty($unreadMessageIds)) {
+                DB::transaction(function() use ($user, $unreadMessageIds) {
+                    foreach ($unreadMessageIds as $messageId) {
+                        DB::table('message_reads')->insert([
+                            'message_id' => $messageId,
+                            'user_id' => $user->id,
+                            'read_at' => now(),
+                            'created_at' => now(),
+                            'updated_at' => now()
+                        ]);
+                    }
+                });
+            }
 
             // Add is_mine flag to each message
             $messages->getCollection()->transform(function ($message) use ($user) {

@@ -109,8 +109,8 @@ class MatchController extends Controller
      */
     public function getPotentialMatches(Request $request)
     {
-//        // Check if the user is authorized to view potential matches
-//        $this->authorize('viewAny', MatchModel::class);
+        // Check if the user is authorized to view potential matches
+        $this->authorize('viewAny', MatchModel::class);
 
         try {
             $user = $request->user();
@@ -122,8 +122,11 @@ class MatchController extends Controller
             });
 
             // Get users who match the preference criteria
-            // This is a simplified example - in a real app, you would have more complex matching logic
-            $query = User::where('id', '!=', $user->id);
+            // Filter out users who are private unless they've matched with the current user
+            $query = User::where('id', '!=', $user->id)
+                         ->where('is_private', false)
+                         ->where('registration_completed', true)
+                         ->whereNull('disabled_at');
 
             // Apply preference filters if they exist
             if ($preference) {
@@ -133,19 +136,29 @@ class MatchController extends Controller
                     }
 
                     if ($preference->min_age && $preference->max_age) {
-                        // Database-agnostic age calculation
+                        // Use the age field directly if available
+                        $subQuery->whereBetween('age', [$preference->min_age, $preference->max_age]);
+
+                        // Fallback to date_of_birth calculation if age is null
                         $minBirthDate = now()->subYears($preference->max_age)->format('Y-m-d');
                         $maxBirthDate = now()->subYears($preference->min_age)->format('Y-m-d');
-                        $subQuery->whereBetween('date_of_birth', [$minBirthDate, $maxBirthDate]);
+                        $subQuery->orWhere(function($q) use ($minBirthDate, $maxBirthDate) {
+                            $q->whereNull('age')
+                              ->whereBetween('date_of_birth', [$minBirthDate, $maxBirthDate]);
+                        });
                     }
 
                     if ($preference->country) {
-                        $subQuery->where(function($locationQuery) use ($preference) {
-                            $locationQuery->where('country_id', $preference->country)
-                                ->orWhere('city', 'like', '%' . $preference->country . '%')
-                                ->orWhere('state', 'like', '%' . $preference->country . '%')
-                                ->orWhere('province', 'like', '%' . $preference->country . '%');
-                        });
+                        // If country is a numeric ID, use it directly
+                        if (is_numeric($preference->country)) {
+                            $subQuery->where('country_id', $preference->country);
+                        } else {
+                            // Otherwise, join with countries table to find matching countries
+                            $subQuery->whereHas('country', function($countryQuery) use ($preference) {
+                                $countryQuery->where('name', 'like', '%' . $preference->country . '%')
+                                           ->orWhere('code', $preference->country);
+                            });
+                        }
                     }
                 });
             }

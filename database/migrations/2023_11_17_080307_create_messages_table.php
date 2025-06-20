@@ -16,15 +16,28 @@ return new class extends Migration
 
             $table->foreignId('chat_id')->constrained('chats')->onDelete('cascade');
             $table->foreignId('sender_id')->constrained('users')->onDelete('cascade');
+            $table->foreignId('reply_to_message_id')->nullable()->constrained('messages')->onDelete('set null');
 
-            $table->text('content');
+            $table->text('content')->nullable();
+            $table->string('message_type')->default('text'); // 'text', 'image', 'video', 'audio', 'file', 'location'
+            $table->json('media_data')->nullable(); // Store media info, dimensions, etc.
             $table->string('media_url')->nullable();
-            $table->boolean('read')->default(false);
-            $table->timestamp('sent_at')->useCurrent();
+            $table->string('thumbnail_url')->nullable();
 
+            // Message status
+            $table->enum('status', ['sent', 'delivered', 'failed'])->default('sent');
+            $table->boolean('is_edited')->default(false);
+            $table->timestamp('edited_at')->nullable();
+
+            $table->timestamp('sent_at')->useCurrent();
+            $table->softDeletes(); // Allow message deletion
             $table->timestamps();
 
-            $table->index('sent_at');
+            // Indexes for performance
+            $table->index(['chat_id', 'sent_at']);
+            $table->index(['sender_id', 'sent_at']);
+            $table->index(['chat_id', 'message_type']);
+            $table->index(['chat_id', 'deleted_at', 'sent_at']);
         });
     }
 

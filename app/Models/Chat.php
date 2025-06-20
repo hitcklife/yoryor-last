@@ -4,41 +4,70 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Chat extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
-    /**
-     * The attributes that are mass assignable.
-     *
-     * @var array<string>
-     */
     protected $fillable = [
-        'user_id_1',
-        'user_id_2'
+        'type', 'name', 'description', 'last_activity_at', 'is_active'
     ];
 
-    public function user1(): BelongsTo
+    protected $casts = [
+        'last_activity_at' => 'datetime',
+        'is_active' => 'boolean'
+    ];
+
+    public function users(): BelongsToMany
     {
-        return $this->belongsTo(User::class, 'user_id_1');
+        return $this->belongsToMany(User::class, 'chat_users')
+                    ->withPivot(['is_muted', 'last_read_at', 'joined_at', 'left_at', 'role'])
+                    ->withTimestamps();
     }
 
-    public function user2(): BelongsTo
+    public function activeUsers(): BelongsToMany
     {
-        return $this->belongsTo(User::class, 'user_id_2');
+        return $this->users()->wherePivotNull('left_at');
     }
 
     public function messages(): HasMany
     {
-        return $this->hasMany(Message::class);
+        return $this->hasMany(Message::class)->orderBy('sent_at');
     }
 
     public function lastMessage(): HasOne
     {
-        return $this->hasOne(Message::class)->latestOfMany();
+        return $this->hasOne(Message::class)->latestOfMany('sent_at');
+    }
+
+    public function getOtherUser(User $currentUser): ?User
+    {
+        if ($this->type !== 'private') {
+            return null;
+        }
+
+        return $this->users()->where('user_id', '!=', $currentUser->id)->first();
+    }
+
+    public function updateLastActivity(): void
+    {
+        $this->update(['last_activity_at' => now()]);
+    }
+
+    public function getUnreadCountForUser(User $user): int
+    {
+        $chatUser = $this->users()->where('user_id', $user->id)->first();
+        if (!$chatUser) {
+            return 0;
+        }
+
+        return $this->messages()
+            ->where('sender_id', '!=', $user->id)
+            ->where('sent_at', '>', $chatUser->pivot->last_read_at ?? $chatUser->pivot->joined_at)
+            ->count();
     }
 }
