@@ -34,8 +34,6 @@ return new class extends Migration
             $table->string('status', 50)->nullable();
             $table->string('occupation', 100)->nullable();
             $table->string('profession', 100)->nullable();
-            $table->text('bio')->nullable();
-            $table->json('interests')->nullable();
             $table->string('country_code', 10)->nullable();
 
             $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade');
