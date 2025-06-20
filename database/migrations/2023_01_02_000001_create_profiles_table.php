@@ -25,12 +25,18 @@ return new class extends Migration
             $table->unsignedInteger('country_id')->nullable();
             $table->decimal('latitude', 10, 7)->nullable();
             $table->decimal('longitude', 10, 7)->nullable();
-            $table->string('profession')->nullable(); // Dating app bio
             $table->text('bio')->nullable(); // Dating app bio
             $table->json('interests')->nullable(); // User interests as JSON
             $table->enum('looking_for', ['casual', 'serious', 'friendship', 'all'])->default('all');
             $table->unsignedInteger('profile_views')->default(0); // Track profile views
             $table->timestamp('profile_completed_at')->nullable(); // When profile was completed
+
+            $table->string('status', 50)->nullable();
+            $table->string('occupation', 100)->nullable();
+            $table->string('profession', 100)->nullable();
+            $table->text('bio')->nullable();
+            $table->json('interests')->nullable();
+            $table->string('country_code', 10)->nullable();
 
             $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade');
             $table->foreign('country_id')->references('id')->on('countries')->onDelete('cascade');
