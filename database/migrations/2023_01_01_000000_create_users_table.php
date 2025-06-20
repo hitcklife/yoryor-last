@@ -27,6 +27,7 @@ return new class extends Migration
             $table->rememberToken();
             $table->string('profile_photo_path', 1024)->nullable();
             $table->timestamp('last_active_at')->nullable(); // New field for activity tracking
+            $table->softDeletes();
             $table->timestamps();
 
             // Composite indexes for dating app queries

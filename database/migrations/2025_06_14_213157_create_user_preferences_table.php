@@ -14,9 +14,10 @@ return new class extends Migration
         Schema::create('user_preferences', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->constrained()->cascadeOnDelete();
-            $table->unsignedSmallInteger('search_radius_km')->default(25); // More specific naming
+            $table->unsignedSmallInteger('search_radius')->default(25); // More specific naming
             $table->string('country', 2)->nullable(); // Using ISO 2-letter country code
             $table->json('preferred_genders')->nullable(); // Support multiple gender preferences
+            $table->json('hobbies_interests')->nullable();
             $table->unsignedTinyInteger('min_age')->nullable()->check('min_age >= 18');
             $table->unsignedTinyInteger('max_age')->nullable()->check('max_age <= 120');
             $table->json('languages_spoken')->nullable();
@@ -28,7 +29,7 @@ return new class extends Migration
             $table->timestamps();
 
             // Optimized composite indexes
-            $table->index(['search_radius_km', 'country'], 'preferences_location_index');
+            $table->index(['search_radius', 'country'], 'preferences_location_index');
             $table->index(['min_age', 'max_age'], 'preferences_age_index');
             $table->index('show_me_globally');
         });

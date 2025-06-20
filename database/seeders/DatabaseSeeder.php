@@ -3,7 +3,6 @@
 namespace Database\Seeders;
 
 use App\Models\User;
-// use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 
 class DatabaseSeeder extends Seeder
@@ -13,17 +12,20 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
+        $this->command->info('Starting database seeding...');
+
         // Run the CountrySeeder first since UserSeeder depends on countries
         $this->call(CountrySeeder::class);
 
-        // Create 500 dummy users with profiles and photos
+        // Create 500 dummy users with profiles, photos, preferences, likes, matches, chats, and messages
         $this->call(UserSeeder::class);
 
-        // Create a test user for development
-        User::factory()->create([
-            'email' => 'test@example.com',
-            'password' => bcrypt('password'),
-            'registration_completed' => true,
-        ]);
+        $this->command->info('Database seeding completed successfully!');
+        $this->command->info('Created:');
+        $this->command->info('- 500 Users with complete profiles');
+        $this->command->info('- User photos and preferences');
+        $this->command->info('- Likes and matches between users');
+        $this->command->info('- Private chats between matched users');
+        $this->command->info('- Realistic conversation messages');
     }
 }

@@ -23,7 +23,8 @@ class Preference extends Model
 
     protected $casts = [
         'languages_spoken' => 'array',
-        'hobbies_interests' => 'array'
+        'hobbies_interests' => 'array',
+        'preferred_genders' => 'array'
     ];
 
     public function user(): BelongsTo
