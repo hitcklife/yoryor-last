@@ -172,6 +172,10 @@ class AuthController extends Controller
             $user = $userData['user'];
             $isRegistrationCompleted = $user->registration_completed;
 
+            // Update last login timestamp
+            $user->last_login_at = now();
+            $user->save();
+
             // Prepare response data
             $responseData = [
                 'otp_sent' => false,
@@ -938,5 +942,64 @@ class AuthController extends Controller
                 'error' => $e->getMessage()
             ], 500);
         }
+    }
+    /**
+     * Check if an email is already taken
+     *
+     * @OA\Post(
+     *     path="/v1/auth/check-email",
+     *     summary="Check if an email is already taken",
+     *     description="Checks if the provided email address is already registered in the system",
+     *     operationId="checkEmail",
+     *     tags={"Authentication"},
+     *     @OA\RequestBody(
+     *         required=true,
+     *         @OA\JsonContent(
+     *             required={"email"},
+     *             @OA\Property(property="email", type="string", format="email", example="user@example.com", description="Email address to check")
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Email availability check result",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="status", type="string", example="success"),
+     *             @OA\Property(property="data", type="object",
+     *                 @OA\Property(property="is_taken", type="boolean", example="false"),
+     *                 @OA\Property(property="email", type="string", example="user@example.com")
+     *             )
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=422,
+     *         description="Validation error",
+     *         @OA\JsonContent(ref="#/components/schemas/Error")
+     *     )
+     * )
+     */
+    public function checkEmail(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'email' => ['required', 'string', 'email', 'max:255'],
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $email = $request->input('email');
+        $isTaken = User::where('email', $email)->exists();
+
+        return response()->json([
+            'status' => 'success',
+            'data' => [
+                'is_taken' => $isTaken,
+                'email' => $email
+            ]
+        ]);
     }
 }

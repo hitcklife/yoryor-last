@@ -93,11 +93,9 @@ class LikeController extends Controller
      *     )
      * )
      */
+
     public function likeUser(Request $request)
     {
-        // Check if the user is authorized to create likes
-        $this->authorize('create', Like::class);
-
         $validated = $request->validate([
             'user_id' => ['required', 'integer', 'exists:users,id']
         ]);
@@ -144,6 +142,8 @@ class LikeController extends Controller
                 ->exists();
 
             $isMatch = false;
+            $match = null;
+            $chat = null;
 
             // If there's a mutual like, create a match
             if ($mutualLike) {
@@ -164,14 +164,64 @@ class LikeController extends Controller
                         'matched_at' => now()
                     ]);
 
+                } else {
+                    $match = $existingMatch;
+                }
+                $isMatch = true;
+
+                // Check if a chat already exists between these users
+                $likedUser = User::find($likedUserId);
+                $existingChat = $user->getChatWith($likedUser);
+
+                if ($existingChat === null) {
                     // Create a chat between the two users
                     $chat = \App\Models\Chat::create([
-                        'user_id_1' => $user->id,
-                        'user_id_2' => $likedUserId
+                        'type' => 'private',
+                        'is_active' => true,
+                        'last_activity_at' => now()
                     ]);
 
-                    $isMatch = true;
+                    // Attach users to the chat
+                    $chat->users()->attach([
+                        $user->id => [
+                            'joined_at' => now(),
+                            'role' => 'member'
+                        ],
+                        $likedUserId => [
+                            'joined_at' => now(),
+                            'role' => 'member'
+                        ]
+                    ]);
+                } else {
+                    $chat = $existingChat;
                 }
+
+                $likedUser = User::with([
+                    'profile.country',
+                    'photos' => function($query) {
+                        $query->where('is_private', false)
+                            ->where(function($q) {
+                                $q->where('status', 'approved')
+                                    ->orWhere('status', 'pending');
+                            })
+                            ->orderBy('order');
+                    },
+                    'profilePhoto'
+                ])->find($likedUserId);
+
+                $userResourceData = new \App\Http\Resources\UserResource($likedUser);
+
+                return response()->json([
+                    'status' => 'success',
+                    'message' => 'User liked successfully',
+                    'data' => [
+                        'like' => $like,
+                        'is_match' => $isMatch,
+                        'match' => $match,
+                        'chat' => $chat,
+                        'liked_user' => $userResourceData
+                    ]
+                ], 201);
             }
 
             return response()->json([
@@ -267,7 +317,7 @@ class LikeController extends Controller
     public function dislikeUser(Request $request)
     {
         // Check if the user is authorized to create dislikes
-        $this->authorize('create', Dislike::class);
+//        $this->authorize('create', Dislike::class);
 
         $validated = $request->validate([
             'user_id' => ['required', 'integer', 'exists:users,id']
@@ -419,13 +469,25 @@ class LikeController extends Controller
     public function getReceivedLikes(Request $request)
     {
         // Check if the user is authorized to view likes
-        $this->authorize('viewAny', Like::class);
+//        $this->authorize('viewAny', Like::class);
 
         try {
             $user = $request->user();
             $perPage = $request->input('per_page', 10);
 
             $likes = Like::where('liked_user_id', $user->id)
+                ->whereNotExists(function ($query) use ($user) {
+                    $query->select('id')
+                        ->from('matches')
+                        ->where(function ($q) use ($user) {
+                            $q->where('user_id', $user->id)
+                                ->whereColumn('matched_user_id', 'likes.user_id');
+                        })
+                        ->orWhere(function ($q) use ($user) {
+                            $q->where('matched_user_id', $user->id)
+                                ->whereColumn('user_id', 'likes.user_id');
+                        });
+                })
                 ->with(['user.profile', 'user.profilePhoto'])
                 ->paginate($perPage);
 

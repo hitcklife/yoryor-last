@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\Api\V1\AgoraController;
+use App\Http\Controllers\Api\V1\BroadcastingController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\V1\AuthController;
@@ -9,6 +11,10 @@ use App\Http\Controllers\Api\V1\LikeController;
 use App\Http\Controllers\Api\V1\ChatController;
 use App\Http\Controllers\Api\V1\UserPhotoController;
 use App\Http\Controllers\Api\V1\PublicController;
+use App\Http\Controllers\Api\V1\HomeController;
+use App\Http\Controllers\Api\V1\PreferenceController;
+use App\Http\Controllers\Api\V1\StoryController;
+use App\Http\Controllers\Api\V1\DeviceTokenController;
 
 /*
 |--------------------------------------------------------------------------
@@ -21,6 +27,7 @@ use App\Http\Controllers\Api\V1\PublicController;
 |
 */
 
+
 // Default route for getting authenticated user
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
@@ -30,10 +37,13 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
 Route::prefix('v1')->group(function () {
     // Public Routes
     Route::get('/countries', [PublicController::class, 'getCountries']);
+
+    Route::post('/broadcasting/auth', [BroadcastingController::class, 'authenticate'])->middleware('auth:sanctum');
     // Auth routes
     Route::prefix('auth')->group(function () {
 //        Route::post('/authenticate', [AuthController::class, 'authenticate'])->middleware('rate.limit.otp');
         Route::post('/authenticate', [AuthController::class, 'authenticate']);
+        Route::post('/check-email', [AuthController::class, 'checkEmail']);
         // Protected auth routes
         Route::middleware('auth:sanctum')->group(function () {
             Route::post('/logout', [AuthController::class, 'logout']);
@@ -50,6 +60,10 @@ Route::prefix('v1')->group(function () {
 
     // Protected routes that require authentication
     Route::middleware('auth:sanctum')->group(function () {
+        // Home page route
+        Route::get('/home', [HomeController::class, 'index']);
+
+
         // Profile routes
         Route::prefix('profile')->group(function () {
             Route::get('/me', [ProfileController::class, 'myProfile']);
@@ -84,5 +98,32 @@ Route::prefix('v1')->group(function () {
             Route::post('/{id}/messages', [ChatController::class, 'sendMessage']);
             Route::post('/{id}/read', [ChatController::class, 'markMessagesAsRead']);
         });
+
+        // Preference routes
+        Route::prefix('preferences')->group(function () {
+            Route::get('/', [PreferenceController::class, 'getPreferences']);
+            Route::put('/', [PreferenceController::class, 'updatePreferences']);
+        });
+
+        // Agora routes for video/voice calling
+        Route::prefix('agora')->group(function () {
+            Route::post('/token', [AgoraController::class, 'generateToken']);
+            Route::post('/initiate', [AgoraController::class, 'initiateCall']);
+            Route::post('/{callId}/join', [AgoraController::class, 'joinCall']);
+            Route::post('/{callId}/end', [AgoraController::class, 'endCall']);
+            Route::post('/{callId}/reject', [AgoraController::class, 'rejectCall']);
+            Route::get('/history', [AgoraController::class, 'getCallHistory']);
+        });
+
+        // Story routes
+        Route::prefix('stories')->group(function () {
+            Route::get('/', [StoryController::class, 'getUserStories']);
+            Route::post('/', [StoryController::class, 'createStory']);
+            Route::delete('/{id}', [StoryController::class, 'deleteStory']);
+            Route::get('/matches', [StoryController::class, 'getMatchedUserStories']);
+        });
+
+        // Device token routes for push notifications
+        Route::post('/device-tokens', [DeviceTokenController::class, 'store']);
     });
 });

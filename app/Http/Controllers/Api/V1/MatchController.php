@@ -11,6 +11,8 @@ use App\Models\MatchModel;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+
 
 /**
  * @OA\Tag(
@@ -20,6 +22,7 @@ use Illuminate\Support\Facades\Auth;
  */
 class MatchController extends Controller
 {
+    use AuthorizesRequests;
     /**
      * Get potential matches for the authenticated user
      *
@@ -109,101 +112,87 @@ class MatchController extends Controller
      */
     public function getPotentialMatches(Request $request)
     {
-        // Check if the user is authorized to view potential matches
-        $this->authorize('viewAny', MatchModel::class);
+    try {
+        $user = $request->user();
+        $perPage = $request->input('per_page', 10);
+        $page = $request->input('page', 1);
 
-        try {
-            $user = $request->user();
-            $perPage = $request->input('per_page', 10);
+        // Use cache to improve performance
+        $cacheKey = "potential_matches_{$user->id}_page_{$page}_per_{$perPage}";
 
-            // Get user's preference with caching
-            $preference = \Cache::remember('user_preference_' . $user->id, now()->addMinutes(30), function () use ($user) {
-                return $user->preference;
-            });
+        return \Cache::remember($cacheKey, now()->addMinutes(5), function() use ($user, $perPage, $page) {
+            // Start with base query using joins for better performance
+            $query = User::select('users.*')
+                ->join('profiles', 'users.id', '=', 'profiles.user_id')
+                ->where('users.id', '!=', $user->id)
+                ->where('users.registration_completed', true)
+                ->whereNull('users.disabled_at');
 
-            // Get users who match the preference criteria
-            // Filter out users who are private unless they've matched with the current user
-            $query = User::where('id', '!=', $user->id)
-                         ->where('is_private', false)
-                         ->where('registration_completed', true)
-                         ->whereNull('disabled_at');
+            // For now, let's get user preferences but not apply filters
+            $preference = $user->preference;
 
-            // Apply preference filters if they exist
-            if ($preference) {
-                $query->whereHas('profile', function ($subQuery) use ($preference) {
-                    if ($preference->gender) {
-                        $subQuery->where('gender', $preference->gender);
-                    }
-
-                    if ($preference->min_age && $preference->max_age) {
-                        // Use the age field directly if available
-                        $subQuery->whereBetween('age', [$preference->min_age, $preference->max_age]);
-
-                        // Fallback to date_of_birth calculation if age is null
-                        $minBirthDate = now()->subYears($preference->max_age)->format('Y-m-d');
-                        $maxBirthDate = now()->subYears($preference->min_age)->format('Y-m-d');
-                        $subQuery->orWhere(function($q) use ($minBirthDate, $maxBirthDate) {
-                            $q->whereNull('age')
-                              ->whereBetween('date_of_birth', [$minBirthDate, $maxBirthDate]);
-                        });
-                    }
-
-                    if ($preference->country) {
-                        // If country is a numeric ID, use it directly
-                        if (is_numeric($preference->country)) {
-                            $subQuery->where('country_id', $preference->country);
-                        } else {
-                            // Otherwise, join with countries table to find matching countries
-                            $subQuery->whereHas('country', function($countryQuery) use ($preference) {
-                                $countryQuery->where('name', 'like', '%' . $preference->country . '%')
-                                           ->orWhere('code', $preference->country);
-                            });
-                        }
-                    }
-                });
-            }
-
-            // Use a single query with joins instead of multiple whereNotIn subqueries
+            // Exclude users already interacted with - single optimized query
             $query->whereNotExists(function ($subQuery) use ($user) {
-                $subQuery->select(\DB::raw(1))
+                $subQuery->selectRaw('1')
                     ->from('likes')
                     ->whereColumn('likes.liked_user_id', 'users.id')
                     ->where('likes.user_id', $user->id);
             })
             ->whereNotExists(function ($subQuery) use ($user) {
-                $subQuery->select(\DB::raw(1))
+                $subQuery->selectRaw('1')
                     ->from('dislikes')
                     ->whereColumn('dislikes.disliked_user_id', 'users.id')
                     ->where('dislikes.user_id', $user->id);
             })
             ->whereNotExists(function ($subQuery) use ($user) {
-                $subQuery->select(\DB::raw(1))
+                $subQuery->selectRaw('1')
                     ->from('matches')
                     ->whereColumn('matches.matched_user_id', 'users.id')
                     ->where('matches.user_id', $user->id);
             });
 
-            // Eager load relationships to reduce N+1 query problems
+            // Add ordering for better user experience
+            $query->orderBy('users.last_active_at', 'desc');
+
+            // Optimized eager loading - only load what we need
             $potentialMatches = $query->with([
-                'profile',
-                'photos',
-                'profilePhoto'
+                'profile:id,user_id,first_name,last_name,gender,date_of_birth,city,state,province,country_id,latitude,longitude,bio,profession,interests,status,looking_for',
+                'photos' => function($query) {
+                    $query->where('is_private', false)
+                          ->where(function($q) {
+                              $q->where('status', 'approved')
+                                ->orWhere('status', 'pending');
+                          })
+                          ->orderBy('order')
+                          ->select('id', 'user_id', 'original_url', 'thumbnail_url', 'medium_url', 'is_profile_photo', 'order', 'status', 'uploaded_at');
+                },
+                'profilePhoto:id,user_id,original_url,thumbnail_url,medium_url,is_profile_photo,order,status,uploaded_at'
             ])->paginate($perPage);
 
-            // Cache the results for a short period
-            $cacheKey = 'potential_matches_' . $user->id . '_page_' . $potentialMatches->currentPage() . '_per_' . $perPage;
-            \Cache::put($cacheKey, $potentialMatches, now()->addMinutes(5));
+            // Log performance metrics
+            \Log::info('Potential matches performance:', [
+                'total_users' => $potentialMatches->total(),
+                'query_time' => round(microtime(true) - LARAVEL_START, 3) . 's',
+                'memory_usage' => round(memory_get_usage() / 1024 / 1024, 2) . 'MB',
+            ]);
 
             return (new UserCollection($potentialMatches))
                 ->additional(['status' => 'success']);
-        } catch (\Exception $e) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Failed to get potential matches',
-                'error' => $e->getMessage()
-            ], 500);
-        }
+        });
+
+    } catch (\Exception $e) {
+        \Log::error('Error in getPotentialMatches: ' . $e->getMessage(), [
+            'user_id' => $request->user()?->id,
+            'trace' => $e->getTraceAsString()
+        ]);
+
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Failed to get potential matches',
+            'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+        ], 500);
     }
+}
 
     /**
      * Create a match with another user
@@ -461,63 +450,62 @@ class MatchController extends Controller
      *     )
      * )
      */
+
+
     public function getMatches(Request $request)
     {
-//        // Check if the user is authorized to view matches
-//        $this->authorize('viewAny', MatchModel::class);
-
         try {
             $user = $request->user();
             $perPage = $request->input('per_page', 10);
-            $mutualOnly = $request->boolean('mutual', false);
 
             // Generate cache key based on request parameters
-            $cacheKey = "user_{$user->id}_matches_page_{$request->input('page', 1)}_per_{$perPage}_mutual_{$mutualOnly}";
+            $cacheKey = "user_{$user->id}_matches_page_{$request->input('page', 1)}_per_{$perPage}";
 
             // Try to get from cache first
-            return \Cache::remember($cacheKey, now()->addMinutes(5), function () use ($user, $perPage, $mutualOnly, $request) {
-                // Build the query with eager loading
-                $query = MatchModel::where('user_id', $user->id)
+            return \Cache::remember($cacheKey, now()->addMinutes(5), function () use ($user, $perPage) {
+                // Get matches where user is either user_id or matched_user_id
+                $matches = MatchModel::where(function ($query) use ($user) {
+                    $query->where('user_id', $user->id)
+                        ->orWhere('matched_user_id', $user->id);
+                })
                     ->with([
+                        'user.profile',
+                        'user.profilePhoto',
+                        'user.photos',
                         'matchedUser.profile',
                         'matchedUser.profilePhoto',
                         'matchedUser.photos'
-                    ]);
+                    ])
+                    ->paginate($perPage);
 
-                if ($mutualOnly) {
-                    // More efficient query for mutual matches using a join instead of a subquery
-                    $query->join('matches as mutual_matches', function ($join) use ($user) {
-                        $join->on('matches.matched_user_id', '=', 'mutual_matches.user_id')
-                            ->where('mutual_matches.matched_user_id', '=', $user->id);
-                    })
-                    ->select('matches.*');
-                }
-
-                $matches = $query->paginate($perPage);
-
-                // Preload mutual match status for all matches in a single query
-                if (!$mutualOnly) {
-                    $matchedUserIds = $matches->pluck('matched_user_id')->toArray();
-
-                    $mutualMatches = MatchModel::where('matched_user_id', $user->id)
-                        ->whereIn('user_id', $matchedUserIds)
-                        ->pluck('user_id')
-                        ->toArray();
-
-                    // Add is_mutual flag to each match without additional queries
-                    $matches->getCollection()->transform(function ($match) use ($mutualMatches) {
-                        $match->is_mutual = in_array($match->matched_user_id, $mutualMatches);
-                        return $match;
-                    });
-                } else {
-                    // If we're only showing mutual matches, they're all mutual by definition
-                    $matches->getCollection()->transform(function ($match) {
+                // Transform matches to always show the other user
+                $matches->getCollection()->transform(function ($match) use ($user) {
+                    // Set the other user as the matched user for consistency
+                    if ($match->user_id === $user->id) {
+                        // Current structure is correct
                         $match->is_mutual = true;
-                        return $match;
-                    });
-                }
+                    } else {
+                        // Swap the users so matched_user is always the other user
+                        $tempUser = $match->user;
+                        $match->user = $match->matchedUser;
+                        $match->matchedUser = $tempUser;
+                        $match->is_mutual = true;
+                    }
+                    return $match;
+                });
 
-                return new MatchCollection($matches);
+                return response()->json([
+                    'status' => 'success',
+                    'data' => [
+                        'matches' => $matches->items(),
+                        'pagination' => [
+                            'total' => $matches->total(),
+                            'per_page' => $matches->perPage(),
+                            'current_page' => $matches->currentPage(),
+                            'last_page' => $matches->lastPage()
+                        ]
+                    ]
+                ]);
             });
         } catch (\Exception $e) {
             return response()->json([
@@ -527,6 +515,7 @@ class MatchController extends Controller
             ], 500);
         }
     }
+
 
     /**
      * Delete a match

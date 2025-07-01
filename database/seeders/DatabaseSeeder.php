@@ -20,6 +20,9 @@ class DatabaseSeeder extends Seeder
         // Create 500 dummy users with profiles, photos, preferences, likes, matches, chats, and messages
         $this->call(UserSeeder::class);
 
+        // Create stories for users
+        $this->call(UserStorySeeder::class);
+
         $this->command->info('Database seeding completed successfully!');
         $this->command->info('Created:');
         $this->command->info('- 500 Users with complete profiles');
@@ -27,5 +30,6 @@ class DatabaseSeeder extends Seeder
         $this->command->info('- Likes and matches between users');
         $this->command->info('- Private chats between matched users');
         $this->command->info('- Realistic conversation messages');
+        $this->command->info('- Instagram-like stories for users');
     }
 }
