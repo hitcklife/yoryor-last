@@ -18,6 +18,7 @@ return new class extends Migration
             $table->string('description')->nullable(); // For group chats
             $table->timestamp('last_activity_at')->nullable();
             $table->boolean('is_active')->default(true);
+            $table->softDeletes();
             $table->timestamps();
 
             // Indexes for performance

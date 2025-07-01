@@ -19,7 +19,7 @@ class User extends Authenticatable
 
     protected $fillable = [
         'email', 'phone', 'google_id', 'facebook_id', 'password',
-        'profile_photo_path', 'registration_completed', 'last_active_at',
+        'profile_photo_path', 'registration_completed', 'last_active_at', 'last_login_at',
         'two_factor_enabled', 'two_factor_secret', 'two_factor_recovery_codes'
     ];
 
@@ -34,6 +34,7 @@ class User extends Authenticatable
             'phone_verified_at' => 'datetime',
             'disabled_at' => 'datetime',
             'last_active_at' => 'datetime',
+            'last_login_at' => 'datetime',
             'registration_completed' => 'boolean',
             'two_factor_enabled' => 'boolean',
             'two_factor_recovery_codes' => 'array',
@@ -90,7 +91,7 @@ class User extends Authenticatable
 
     public function preference(): HasOne
     {
-        return $this->hasOne(Preference::class);
+        return $this->hasOne(UserPreference::class);
     }
 
     // CHAT RELATIONSHIPS - Updated based on your structure
@@ -161,6 +162,33 @@ class User extends Authenticatable
         return $this->hasMany(Dislike::class, 'disliked_user_id');
     }
 
+    /**
+     * Get the stories for the user.
+     */
+    public function stories(): HasMany
+    {
+        return $this->hasMany(UserStory::class)->orderBy('created_at', 'desc');
+    }
+
+    /**
+     * Get only active stories for the user.
+     */
+    public function activeStories(): HasMany
+    {
+        return $this->hasMany(UserStory::class)
+                    ->where('status', 'active')
+                    ->where('expires_at', '>', now())
+                    ->orderBy('created_at', 'desc');
+    }
+
+    /**
+     * Get the device tokens for the user.
+     */
+    public function deviceTokens(): HasMany
+    {
+        return $this->hasMany(DeviceToken::class);
+    }
+
     // HELPER METHODS
     public function updateLastActive(): void
     {
@@ -194,7 +222,7 @@ class User extends Authenticatable
     }
 
     // CHAT HELPER METHODS
-    public function getChatWith(User $user): ?Chat
+    public function getChatWith(User $user): ?\Illuminate\Database\Eloquent\Model
     {
         return $this->chats()
             ->whereHas('users', function($query) use ($user) {

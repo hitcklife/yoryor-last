@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Events\MessageReadEvent;
+use App\Events\NewMessageEvent;
 use App\Http\Controllers\Controller;
 use App\Models\Chat;
 use App\Models\Message;
@@ -9,6 +11,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * @OA\Tag(
@@ -289,6 +292,7 @@ class ChatController extends Controller
         try {
             $user = $request->user();
             $perPage = $request->input('per_page', 20);
+            $beforeMessageId = $request->input('before_message_id'); // For loading older messages
 
             // Find the chat through the user's relationship to ensure authorization
             $chat = $user->chats()
@@ -303,7 +307,7 @@ class ChatController extends Controller
             $otherUser = $chat->users->first();
             $chat->other_user = $otherUser;
 
-            // Remove the users collection to clean up the response
+            // Remove the user's collection to clean up the response
             unset($chat->users);
 
             // Get messages with optimized query
@@ -335,6 +339,7 @@ class ChatController extends Controller
                 $message->is_mine = $readStatus['is_mine'];
                 $message->is_read = $readStatus['is_read'];
                 $message->read_at = $readStatus['read_at'];
+
                 return $message;
             });
 
@@ -342,12 +347,12 @@ class ChatController extends Controller
                 'status' => 'success',
                 'data' => [
                     'chat' => $chat,
-                    'messages' => $messages->items(),
+                    'messages' => $messages->toArray(),
                     'pagination' => [
-                        'total' => $messages->total(),
-                        'per_page' => $messages->perPage(),
-                        'current_page' => $messages->currentPage(),
-                        'last_page' => $messages->lastPage()
+                        'total' => $totalMessages,
+                        'loaded' => $messages->count(),
+                        'has_more' => $hasMoreMessages,
+                        'oldest_message_id' => $messages->isEmpty() ? null : $messages->first()->id
                     ]
                 ]
             ]);
@@ -384,10 +389,24 @@ class ChatController extends Controller
      *     ),
      *     @OA\RequestBody(
      *         required=true,
+     *         @OA\MediaType(
+     *             mediaType="multipart/form-data",
+     *             @OA\Schema(
+     *                 @OA\Property(property="content", type="string", example="Hello, how are you?", description="Message content"),
+     *                 @OA\Property(property="media_url", type="string", example="https://example.com/media/1.jpg", description="URL to attached media (optional)"),
+     *                 @OA\Property(property="media_file", type="file", description="Media file to upload (image, video, audio, or other file)"),
+     *                 @OA\Property(property="message_type", type="string", enum={"text", "image", "video", "audio", "file", "location"}, description="Type of message (optional, will be auto-detected for uploads)"),
+     *                 @OA\Property(property="media_data", type="object", description="Additional metadata for the media (optional)"),
+     *                 @OA\Property(property="reply_to_message_id", type="integer", description="ID of the message being replied to (optional)")
+     *             )
+     *         ),
      *         @OA\JsonContent(
      *             required={"content"},
      *             @OA\Property(property="content", type="string", example="Hello, how are you?", description="Message content"),
-     *             @OA\Property(property="media_url", type="string", example="https://example.com/media/1.jpg", description="URL to attached media (optional)")
+     *             @OA\Property(property="media_url", type="string", example="https://example.com/media/1.jpg", description="URL to attached media (optional)"),
+     *             @OA\Property(property="message_type", type="string", enum={"text", "image", "video", "audio", "file", "location"}, description="Type of message"),
+     *             @OA\Property(property="media_data", type="object", description="Additional metadata for the media (optional)"),
+     *             @OA\Property(property="reply_to_message_id", type="integer", description="ID of the message being replied to (optional)")
      *         )
      *     ),
      *     @OA\Response(
@@ -460,9 +479,21 @@ class ChatController extends Controller
      */
     public function sendMessage(Request $request, $id)
     {
+        // Handle media_data if it's sent as JSON string
+        if ($request->has('media_data') && is_string($request->input('media_data'))) {
+            $decodedMediaData = json_decode($request->input('media_data'), true);
+            if (json_last_error() === JSON_ERROR_NONE) {
+                $request->merge(['media_data' => $decodedMediaData]);
+            }
+        }
+
         $validated = $request->validate([
-            'content' => ['required_without:media_url', 'string', 'nullable'],
-            'media_url' => ['required_without:content', 'string', 'nullable']
+            'content' => ['required_without_all:media_url,media_file', 'string', 'nullable'],
+            'media_url' => ['required_without_all:content,media_file', 'string', 'nullable'],
+            'media_file' => ['required_without_all:content,media_url', 'file', 'nullable', 'max:100000'], // 100MB max file size
+            'message_type' => ['string', 'in:text,image,video,audio,voice,file,location'],
+            'media_data' => ['array', 'nullable'],
+            'reply_to_message_id' => ['integer', 'exists:messages,id', 'nullable']
         ]);
 
         try {
@@ -471,7 +502,136 @@ class ChatController extends Controller
             // Find chat and verify user access through relationship
             $chat = $user->chats()->findOrFail($id);
 
-            // Create the message
+            // Check if chat is active
+            if (!$chat->is_active) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'This chat is no longer active'
+                ], 403);
+            }
+
+            // Handle file upload if present
+            $mediaUrl = $validated['media_url'] ?? null;
+            $messageType = $validated['message_type'] ?? 'text';
+
+            if ($request->hasFile('media_file')) {
+                try {
+                    $file = $request->file('media_file');
+
+                    // Check if file is valid
+                    if (!$file->isValid()) {
+                        throw new \Exception('Invalid file upload');
+                    }
+
+                    $mimeType = $file->getMimeType();
+                    $extension = $file->getClientOriginalExtension();
+
+                    // Determine message type based on mime type if not provided
+                    if (!isset($validated['message_type'])) {
+                        if (strpos($mimeType, 'image/') === 0) {
+                            $messageType = 'image';
+                        } elseif (strpos($mimeType, 'video/') === 0) {
+                            $messageType = 'video';
+                        } elseif (strpos($mimeType, 'audio/') === 0) {
+                            // Check if it's specifically a voice message based on media_data
+                            $mediaData = $validated['media_data'] ?? [];
+                            if (isset($mediaData['duration']) && $mediaData['duration'] <= 300) { // Voice messages typically under 5 minutes
+                                $messageType = 'voice';
+                            } else {
+                                $messageType = 'audio';
+                            }
+                        } else {
+                            $messageType = 'file';
+                        }
+                    } else {
+                        // If message_type is explicitly set to 'voice', ensure it's an audio file
+                        if ($validated['message_type'] === 'voice' && strpos($mimeType, 'audio/') !== 0) {
+                            throw new \Exception('Voice messages must be audio files');
+                        }
+                    }
+
+                    // Generate a unique filename
+                    $filename = uniqid('chat_' . $chat->id . '_', true) . '.' . $extension;
+
+                    // Define the path based on message type
+                    $folderName = $messageType === 'voice' ? 'voices' : $messageType . 's';
+                    $path = 'chats/' . $chat->id . '/' . $folderName . '/' . $filename;
+
+                    // Log file info before upload
+                    \Log::debug('Attempting S3 upload', [
+                        'chat_id' => $chat->id,
+                        'filename' => $filename,
+                        'path' => $path,
+                        'mime_type' => $mimeType,
+                        'size' => $file->getSize(),
+                        'is_valid' => $file->isValid(),
+                        'original_name' => $file->getClientOriginalName(),
+                    ]);
+
+                    $store = false;
+                    try {
+                        $stream = fopen($file->getRealPath(), 'r');
+
+                        if ($stream === false) {
+                            throw new \Exception('Could not open file for upload');
+                        }
+
+                        $store = Storage::disk('s3')->put($path, $stream);
+                        \Log::debug('S3 upload result', [
+                            'path' => $path,
+                            'store' => $store
+                        ]);
+
+                        if (is_resource($stream)) {
+                            fclose($stream);
+                        }
+
+                        // Get the full URL for the file
+                        $mediaUrl = Storage::disk('s3')->url($path);
+
+                        // Store additional media data
+                        $mediaData = $validated['media_data'] ?? [];
+                        $mediaData['original_filename'] = $file->getClientOriginalName();
+                        $mediaData['size'] = $file->getSize();
+                        $mediaData['mime_type'] = $mimeType;
+
+                        // For voice messages, ensure duration is stored
+                        if ($messageType === 'voice') {
+                            // If duration wasn't provided in the request, you might want to extract it
+                            // from the audio file using a library like getID3 or FFmpeg
+                            if (!isset($mediaData['duration'])) {
+                                $mediaData['duration'] = $this->extractAudioDuration($file->getRealPath());
+                            }
+
+                            // Add voice-specific metadata
+                            $mediaData['is_voice_message'] = true;
+
+                            // Set a default content for voice messages if none provided
+                            if (empty($validated['content'])) {
+                                $validated['content'] = 'Voice Message';
+                            }
+                        }
+
+                        $validated['media_data'] = $mediaData;
+
+                    } catch (\Exception $e) {
+                        \Log::error('S3 upload exception', [
+                            'path' => $path,
+                            'error' => $e->getMessage(),
+                            'trace' => $e->getTraceAsString()
+                        ]);
+                        throw $e;
+                    }
+                } catch (\Exception $e) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Failed to upload media file',
+                        'error' => $e->getMessage()
+                    ], 500);
+                }
+            }
+
+            // Create the message with proper fields
             $message = Message::create([
                 'chat_id' => $chat->id,
                 'sender_id' => $user->id,
@@ -507,6 +667,23 @@ class ChatController extends Controller
                 'message' => 'Failed to send message',
                 'error' => $e->getMessage()
             ], 500);
+        }
+    }
+
+    /**
+     * Extract audio duration from file (helper method)
+     * You might want to use a library like getID3 or FFmpeg for more accurate results
+     */
+    private function extractAudioDuration($filePath)
+    {
+        // Basic duration extraction - you might want to use a more robust solution
+        // For now, return null if we can't determine duration
+        try {
+            // This is a placeholder - implement actual duration extraction
+            // You could use getID3 library or FFmpeg
+            return null;
+        } catch (\Exception $e) {
+            return null;
         }
     }
 

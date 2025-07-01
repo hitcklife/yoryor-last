@@ -146,9 +146,48 @@ class AuthService
      *
      * @param User $user
      * @param array $data
-     * @return User
+     * @return string[]
      * @throws \Exception
      */
+    // Add this method to the AuthService class
+    private function generateThumbnails($originalPath, $filename, $directory, $user)
+    {
+        $thumbnailUrl = null;
+        $mediumUrl = null;
+
+        try {
+            // Use Laravel's built-in image manipulation instead of laravel-thumbnail
+            $image = \Intervention\Image\Facades\Image::make(storage_path('app/public/' . $originalPath));
+
+            // Generate thumbnail (150x150px)
+            $thumbnailFilename = 'thumb_' . $filename;
+            $thumbnailPath = $directory . '/' . $thumbnailFilename;
+            $thumbnailImage = $image->fit(150, 150);
+
+            // Save thumbnail to your specific directory
+            \Storage::disk('public')->put($thumbnailPath, (string) $thumbnailImage->encode());
+            $thumbnailUrl = '/storage/' . $thumbnailPath;
+
+            // Generate medium size image (400x400px)
+            $mediumFilename = 'medium_' . $filename;
+            $mediumPath = $directory . '/' . $mediumFilename;
+            $mediumImage = $image->fit(400, 400);
+
+            // Save medium image to your specific directory
+            \Storage::disk('public')->put($mediumPath, (string) $mediumImage->encode());
+            $mediumUrl = '/storage/' . $mediumPath;
+
+        } catch (\Exception $e) {
+            \Log::error("Failed to generate thumbnails: " . $e->getMessage());
+            // Fallback to original
+            $thumbnailUrl = '/storage/' . $originalPath;
+            $mediumUrl = '/storage/' . $originalPath;
+        }
+
+        return [$thumbnailUrl, $mediumUrl];
+    }
+
+    // Update the completeRegistration method photo processing section
     public function completeRegistration(User $user, array $data): User
     {
         try {
@@ -158,7 +197,8 @@ class AuthService
             $user->update([
                 'email' => $data['email'] ?? $user->email,
                 'registration_completed' => true,
-                'is_private' => $data['is_private'] ?? $user->is_private
+                'is_private' => $data['is_private'] ?? $user->is_private,
+                'phone_verified_at' => now()
             ]);
 
             // Find country if provided
@@ -196,7 +236,9 @@ class AuthService
                     'city' => $data['city'] ?? null,
                     'country_id' => $country_id,
                     'age' => $age,
-                    'looking_for' => $data['looking_for'] ?? 'all',
+                    'status' => $data['status'] ?? null,
+                    'occupation' => $data['occupation'] ?? null,
+                    'looking_for' => $data['lookingFor'] ?? 'all',
                     'profile_completed_at' => now()
                 ]
             );
@@ -211,12 +253,20 @@ class AuthService
                 ]
             );
 
+            // ... existing code until photo handling ...
+
             // Handle photos if provided
-            if (isset($data['photos']) && is_array($data['photos'])) {
+            if (isset($data['photos']) && is_array($data['photos']) && !empty($data['photos'])) {
                 $mainPhotoIndex = isset($data['mainPhotoIndex']) ? (int)$data['mainPhotoIndex'] : 0;
+                $profilePhotoUrl = null; // Track the profile photo URL
 
                 // Process each photo
                 foreach ($data['photos'] as $index => $photoData) {
+                    // Skip if photo data is empty or invalid
+                    if (empty($photoData) || (!is_array($photoData) && !($photoData instanceof \Illuminate\Http\UploadedFile))) {
+                        continue;
+                    }
+
                     // Check if this is the main photo
                     $isProfilePhoto = ($index == $mainPhotoIndex);
 
@@ -227,46 +277,78 @@ class AuthService
                             ->update(['is_profile_photo' => false]);
                     }
 
-                    // Generate a unique filename for the photo
+                    $originalUrl = null;
+                    $thumbnailUrl = null;
+                    $mediumUrl = null;
+
                     if ($photoData instanceof \Illuminate\Http\UploadedFile) {
-                        // Handle uploaded file
-                        $filename = $photoData->getClientOriginalName();
-                        // Alternatively, generate a unique name
-                        // $filename = time() . '_' . $photoData->getClientOriginalName();
-                    } else {
-                        // Handle photo data as array (from mobile app)
+                        // Handle uploaded file from web
+                        $filename = time() . '_' . $index . '_' . $photoData->getClientOriginalName();
+                        $directory = 'photos/' . $user->id;
+
+                        // Ensure directory exists
+                        if (!\Storage::disk('public')->exists($directory)) {
+                            \Storage::disk('public')->makeDirectory($directory);
+                        }
+
+                        // Store original file
+                        $originalPath = $photoData->storeAs($directory, $filename, 'public');
+                        $originalUrl = '/storage/' . $originalPath;
+
+                        // Generate thumbnails using the new method
+                        [$thumbnailUrl, $mediumUrl] = $this->generateThumbnails($originalPath, $filename, $directory, $user);
+
+                    } else if (is_array($photoData) && isset($photoData['name'])) {
+                        // Handle photo data from mobile app
                         $filename = $photoData['name'];
-                    }
-                    $directory = 'photos/' . $user->id;
+                        $directory = 'photos/' . $user->id;
 
-                    // Ensure the directory exists
-                    if (!Storage::disk('public')->exists($directory)) {
-                        Storage::disk('public')->makeDirectory($directory);
-                    }
+                        // Ensure directory exists
+                        if (!\Storage::disk('public')->exists($directory)) {
+                            \Storage::disk('public')->makeDirectory($directory);
+                        }
 
-                    // Handle file storage based on the type of data
-                    if ($photoData instanceof \Illuminate\Http\UploadedFile) {
-                        // For web uploads, store the actual file
-                        $path = $photoData->storeAs($directory, $filename, 'public');
-                        $photoUrl = '/storage/' . $path;
+                        // For mobile uploads, assume the original file already exists in the storage
+                        $originalStoragePath = $directory . '/' . $filename;
+                        $fullOriginalPath = storage_path('app/public/' . $originalStoragePath);
+                        $originalUrl = '/storage/' . $originalStoragePath;
+
+                        // Check if the original file exists, if not skip this photo
+                        if (!file_exists($fullOriginalPath)) {
+                            \Log::warning("Photo file not found: " . $fullOriginalPath);
+                            continue;
+                        }
+
+                        // Generate thumbnails using the new method
+                        [$thumbnailUrl, $mediumUrl] = $this->generateThumbnails($originalStoragePath, $filename, $directory, $user);
                     } else {
-                        // For mobile app uploads, the files are already uploaded and we just need to store the references
-                        // The mobile app sends the photo details (name and size) in the request
-                        $path = $directory . '/' . $filename;
-                        $photoUrl = '/storage/' . $path;
-
-                        // If we need to create an empty file as a placeholder (optional)
-                        // Storage::disk('public')->put($path, '');
+                        // Skip invalid photo data
+                        continue;
                     }
 
-                    // Create photo record
+                    // Store the profile photo URL for updating the user record
+                    if ($isProfilePhoto) {
+                        $profilePhotoUrl = $originalUrl;
+                    }
+
+                    // Create photo record with all required fields
                     \App\Models\UserPhoto::create([
                         'user_id' => $user->id,
-                        'photo_url' => $photoUrl,
+                        'original_url' => $originalUrl,
+                        'thumbnail_url' => $thumbnailUrl,
+                        'medium_url' => $mediumUrl,
                         'is_profile_photo' => $isProfilePhoto,
                         'order' => $index,
-                        'is_private' => false,
+                        'is_private' => $data['is_private'] ?? false,
+                        'is_verified' => false,
+                        'status' => 'pending',
+                        'uploaded_at' => now(),
                     ]);
+                }
+
+                // Update user's profile_photo_path if a profile photo was set
+                if ($profilePhotoUrl) {
+                    $user->update(['profile_photo_path' => $profilePhotoUrl]);
                 }
             }
 
