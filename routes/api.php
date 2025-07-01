@@ -80,7 +80,10 @@ Route::prefix('v1')->group(function () {
         // Chat routes
         Route::prefix('chats')->group(function () {
             Route::get('/', [ChatController::class, 'getChats']);
+            Route::post('/create', [ChatController::class, 'createOrGetChat']);
+            Route::get('/unread-count', [ChatController::class, 'getUnreadCount']);
             Route::get('/{id}', [ChatController::class, 'getChat']);
+            Route::delete('/{id}', [ChatController::class, 'deleteChat']);
             Route::post('/{id}/messages', [ChatController::class, 'sendMessage']);
             Route::post('/{id}/read', [ChatController::class, 'markMessagesAsRead']);
         });
