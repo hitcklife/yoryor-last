@@ -100,6 +100,10 @@ Route::prefix('v1')->group(function () {
             Route::delete('/{id}', [ChatController::class, 'deleteChat']);
             Route::post('/{id}/messages', [ChatController::class, 'sendMessage']);
             Route::post('/{id}/read', [ChatController::class, 'markMessagesAsRead']);
+            
+            // Message edit and delete routes
+            Route::put('/{chat_id}/messages/{message_id}', [ChatController::class, 'editMessage']);
+            Route::delete('/{chat_id}/messages/{message_id}', [ChatController::class, 'deleteMessage']);
         });
 
         // Preference routes

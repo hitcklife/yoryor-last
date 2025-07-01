@@ -317,7 +317,73 @@ Get total unread messages count across all chats.
 }
 ```
 
-### 7. Delete Chat
+### 7. Edit Message
+
+Edit a text message (only text messages can be edited).
+
+**Endpoint:** `PUT /chats/{chat_id}/messages/{message_id}`
+
+**Request Body:**
+```json
+{
+    "content": "Updated message content"
+}
+```
+
+**Example Response:**
+```json
+{
+    "status": "success",
+    "message": "Message edited successfully",
+    "data": {
+        "message": {
+            "id": 15,
+            "chat_id": 1,
+            "sender_id": 1,
+            "content": "Updated message content",
+            "message_type": "text",
+            "media_url": null,
+            "thumbnail_url": null,
+            "reply_to_message_id": null,
+            "status": "sent",
+            "is_edited": true,
+            "edited_at": "2024-01-15T10:40:00Z",
+            "sent_at": "2024-01-15T10:30:00Z",
+            "is_mine": true,
+            "is_read": true,
+            "sender": {
+                "id": 1,
+                "email": "user@example.com"
+            }
+        }
+    }
+}
+```
+
+**Error Responses:**
+- `400`: Only text messages can be edited
+- `403`: You can only edit your own messages
+- `404`: Message not found
+
+### 8. Delete Message
+
+Delete a message (soft delete).
+
+**Endpoint:** `DELETE /chats/{chat_id}/messages/{message_id}`
+
+**Example Response:**
+```json
+{
+    "status": "success",
+    "message": "Message deleted successfully"
+}
+```
+
+**Error Responses:**
+- `403`: You can only delete your own messages
+- `404`: Message not found
+
+### 9. Delete Chat
 
 Remove user from chat (soft delete).
 
@@ -409,6 +475,47 @@ function sendMessage(chatId, content) {
         .catch(error => {
             // Mark message as failed
             markMessageAsFailed(tempMessage.id);
+        });
+}
+
+// Edit message optimistically
+function editMessage(chatId, messageId, newContent) {
+    // Update message in UI immediately
+    const originalMessage = getMessageById(messageId);
+    updateMessageInUI(messageId, {
+        content: newContent,
+        is_edited: true,
+        edited_at: new Date().toISOString()
+    });
+    
+    // Send to API
+    api.put(`/chats/${chatId}/messages/${messageId}`, { content: newContent })
+        .then(response => {
+            // Update with server response
+            updateMessageInUI(messageId, response.data.message);
+        })
+        .catch(error => {
+            // Revert to original content
+            updateMessageInUI(messageId, originalMessage);
+            showError('Failed to edit message');
+        });
+}
+
+// Delete message optimistically
+function deleteMessage(chatId, messageId) {
+    // Remove message from UI immediately
+    const originalMessage = getMessageById(messageId);
+    removeMessageFromUI(messageId);
+    
+    // Send to API
+    api.delete(`/chats/${chatId}/messages/${messageId}`)
+        .then(() => {
+            // Message successfully deleted
+        })
+        .catch(error => {
+            // Restore message in UI
+            addMessageToChat(originalMessage);
+            showError('Failed to delete message');
         });
 }
 ```
@@ -506,6 +613,26 @@ Echo.private(`chat.${chatId}`)
     });
 ```
 
+### Message Edited Event
+```javascript
+Echo.private(`chat.${chatId}`)
+    .listen('MessageEdited', (e) => {
+        console.log('Message edited:', e.message);
+        console.log('Original content:', e.original_content);
+        console.log('Edited at:', e.edited_at);
+    });
+```
+
+### Message Deleted Event
+```javascript
+Echo.private(`chat.${chatId}`)
+    .listen('MessageDeleted', (e) => {
+        console.log('Message deleted:', e.message_id);
+        console.log('Deleted by user:', e.deleted_by_user_id);
+        console.log('Deleted at:', e.deleted_at);
+    });
+```
+
 ## Security Considerations
 
 1. **Authentication**: Always validate Bearer tokens
@@ -533,6 +660,18 @@ curl -X POST \
 # Get unread count
 curl -H "Authorization: Bearer {token}" \
      https://your-api.com/api/v1/chats/unread-count
+
+# Edit message
+curl -X PUT \
+     -H "Authorization: Bearer {token}" \
+     -H "Content-Type: application/json" \
+     -d '{"content": "Updated message content"}' \
+     https://your-api.com/api/v1/chats/1/messages/15
+
+# Delete message
+curl -X DELETE \
+     -H "Authorization: Bearer {token}" \
+     https://your-api.com/api/v1/chats/1/messages/15
 ```
 
 This documentation provides everything needed to integrate the optimized chat API into your mobile application efficiently.

@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Events\MessageDeletedEvent;
+use App\Events\MessageEditedEvent;
 use App\Events\MessageReadEvent;
 use App\Events\NewMessageEvent;
 use App\Http\Controllers\Controller;
@@ -1030,6 +1032,298 @@ class ChatController extends Controller
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to get unread count',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Edit a message
+     *
+     * @OA\Put(
+     *     path="/v1/chats/{chat_id}/messages/{message_id}",
+     *     summary="Edit a message",
+     *     description="Edits a text message (only text messages can be edited)",
+     *     operationId="editMessage",
+     *     tags={"Chat"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\Parameter(
+     *         name="chat_id",
+     *         in="path",
+     *         description="Chat ID",
+     *         required=true,
+     *         @OA\Schema(type="integer")
+     *     ),
+     *     @OA\Parameter(
+     *         name="message_id",
+     *         in="path",
+     *         description="Message ID",
+     *         required=true,
+     *         @OA\Schema(type="integer")
+     *     ),
+     *     @OA\RequestBody(
+     *         required=true,
+     *         @OA\JsonContent(
+     *             required={"content"},
+     *             @OA\Property(property="content", type="string", example="Updated message content", description="New message content")
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Message edited successfully",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="status", type="string", example="success"),
+     *             @OA\Property(property="message", type="string", example="Message edited successfully"),
+     *             @OA\Property(
+     *                 property="data",
+     *                 type="object",
+     *                 @OA\Property(
+     *                     property="message",
+     *                     type="object",
+     *                     @OA\Property(property="id", type="integer", example=1),
+     *                     @OA\Property(property="chat_id", type="integer", example=1),
+     *                     @OA\Property(property="sender_id", type="integer", example=1),
+     *                     @OA\Property(property="content", type="string", example="Updated message content"),
+     *                     @OA\Property(property="message_type", type="string", example="text"),
+     *                     @OA\Property(property="is_edited", type="boolean", example=true),
+     *                     @OA\Property(property="edited_at", type="string", format="date-time", example="2023-01-01T00:00:00.000000Z"),
+     *                     @OA\Property(property="sent_at", type="string", format="date-time", example="2023-01-01T00:00:00.000000Z"),
+     *                     @OA\Property(property="is_mine", type="boolean", example=true)
+     *                 )
+     *             )
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=400,
+     *         description="Invalid request",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="status", type="string", example="error"),
+     *             @OA\Property(property="message", type="string", example="Only text messages can be edited")
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=401,
+     *         description="Unauthenticated",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="status", type="string", example="error"),
+     *             @OA\Property(property="message", type="string", example="Unauthenticated")
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=403,
+     *         description="Unauthorized",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="status", type="string", example="error"),
+     *             @OA\Property(property="message", type="string", example="You can only edit your own messages")
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=404,
+     *         description="Message not found",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="status", type="string", example="error"),
+     *             @OA\Property(property="message", type="string", example="Message not found")
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=500,
+     *         description="Server error",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="status", type="string", example="error"),
+     *             @OA\Property(property="message", type="string", example="Server error"),
+     *             @OA\Property(property="error", type="string", example="Error message")
+     *         )
+     *     )
+     * )
+     */
+    public function editMessage(Request $request, $chatId, $messageId)
+    {
+        $validated = $request->validate([
+            'content' => ['required', 'string', 'max:5000'] // Limit message length
+        ]);
+
+        try {
+            $user = $request->user();
+
+            // Find the message and verify it belongs to the user's chat
+            $message = Message::where('id', $messageId)
+                ->where('chat_id', $chatId)
+                ->whereHas('chat.users', function($query) use ($user) {
+                    $query->where('user_id', $user->id);
+                })
+                ->firstOrFail();
+
+            // Check if user can edit this message (only their own messages)
+            if ($message->sender_id !== $user->id) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'You can only edit your own messages'
+                ], 403);
+            }
+
+            // Only text messages can be edited
+            if ($message->message_type !== 'text') {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Only text messages can be edited'
+                ], 400);
+            }
+
+            // Store original content for event
+            $originalContent = $message->content;
+
+            // Update the message
+            $message->update([
+                'content' => $validated['content'],
+                'is_edited' => true,
+                'edited_at' => now()
+            ]);
+
+            // Load relationships for response
+            $message->load('sender:id,email');
+
+            // Transform message for response
+            $readStatus = $message->getReadStatusFor($user);
+            $message->is_mine = $readStatus['is_mine'];
+            $message->is_read = $readStatus['is_read'];
+
+            // Broadcast the edit event
+            broadcast(new MessageEditedEvent($message, $originalContent))->toOthers();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Message edited successfully',
+                'data' => [
+                    'message' => $message
+                ]
+            ]);
+
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Message not found'
+            ], 404);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to edit message',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Delete a message
+     *
+     * @OA\Delete(
+     *     path="/v1/chats/{chat_id}/messages/{message_id}",
+     *     summary="Delete a message",
+     *     description="Deletes a message (soft delete)",
+     *     operationId="deleteMessage",
+     *     tags={"Chat"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\Parameter(
+     *         name="chat_id",
+     *         in="path",
+     *         description="Chat ID",
+     *         required=true,
+     *         @OA\Schema(type="integer")
+     *     ),
+     *     @OA\Parameter(
+     *         name="message_id",
+     *         in="path",
+     *         description="Message ID",
+     *         required=true,
+     *         @OA\Schema(type="integer")
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Message deleted successfully",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="status", type="string", example="success"),
+     *             @OA\Property(property="message", type="string", example="Message deleted successfully")
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=401,
+     *         description="Unauthenticated",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="status", type="string", example="error"),
+     *             @OA\Property(property="message", type="string", example="Unauthenticated")
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=403,
+     *         description="Unauthorized",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="status", type="string", example="error"),
+     *             @OA\Property(property="message", type="string", example="You can only delete your own messages")
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=404,
+     *         description="Message not found",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="status", type="string", example="error"),
+     *             @OA\Property(property="message", type="string", example="Message not found")
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=500,
+     *         description="Server error",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="status", type="string", example="error"),
+     *             @OA\Property(property="message", type="string", example="Server error"),
+     *             @OA\Property(property="error", type="string", example="Error message")
+     *         )
+     *     )
+     * )
+     */
+    public function deleteMessage(Request $request, $chatId, $messageId)
+    {
+        try {
+            $user = $request->user();
+
+            // Find the message and verify it belongs to the user's chat
+            $message = Message::where('id', $messageId)
+                ->where('chat_id', $chatId)
+                ->whereHas('chat.users', function($query) use ($user) {
+                    $query->where('user_id', $user->id);
+                })
+                ->firstOrFail();
+
+            // Check if user can delete this message (only their own messages)
+            if ($message->sender_id !== $user->id) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'You can only delete your own messages'
+                ], 403);
+            }
+
+            // Store message info before deletion for event
+            $messageId = $message->id;
+            $chatId = $message->chat_id;
+
+            // Soft delete the message
+            $message->delete();
+
+            // Broadcast the delete event
+            broadcast(new MessageDeletedEvent($messageId, $chatId, $user->id))->toOthers();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Message deleted successfully'
+            ]);
+
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Message not found'
+            ], 404);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to delete message',
                 'error' => $e->getMessage()
             ], 500);
         }
