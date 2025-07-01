@@ -134,7 +134,7 @@ class EnhancedChatController extends Controller
             $chat = $user->chats()
                 ->with(['users' => function($query) use ($user) {
                     $query->where('users.id', '!=', $user->id)
-                          ->with(['profile', 'profilePhoto']);
+                          ->with(['profile', 'profilePhoto:id,user_id,original_url,thumbnail_url,medium_url,is_profile_photo']);
                 }])
                 ->findOrFail($id);
 

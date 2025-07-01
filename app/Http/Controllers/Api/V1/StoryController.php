@@ -94,7 +94,7 @@ class StoryController extends Controller
             $stories = UserStory::whereIn('user_id', $matchedUserIds)
                 ->where('status', 'active')
                 ->where('expires_at', '>', now())
-                ->with('user.profile', 'user.profilePhoto')
+                ->with('user.profile', 'user.profilePhoto:id,user_id,original_url,thumbnail_url,medium_url,is_profile_photo')
                 ->orderBy('created_at', 'desc')
                 ->get();
 

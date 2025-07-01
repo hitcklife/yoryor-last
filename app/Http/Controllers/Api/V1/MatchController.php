@@ -470,10 +470,10 @@ class MatchController extends Controller
                 })
                     ->with([
                         'user.profile',
-                        'user.profilePhoto',
+                        'user.profilePhoto:id,user_id,original_url,thumbnail_url,medium_url,is_profile_photo',
                         'user.photos',
                         'matchedUser.profile',
-                        'matchedUser.profilePhoto',
+                        'matchedUser.profilePhoto:id,user_id,original_url,thumbnail_url,medium_url,is_profile_photo',
                         'matchedUser.photos'
                     ])
                     ->paginate($perPage);

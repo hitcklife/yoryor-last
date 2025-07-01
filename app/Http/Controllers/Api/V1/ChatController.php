@@ -128,7 +128,7 @@ class ChatController extends Controller
                     'users' => function($query) use ($user) {
                         $query->where('users.id', '!=', $user->id)
                               ->with(['profile:id,user_id,first_name,last_name,bio',
-                                     'profilePhoto:id,user_id,url,is_profile_photo']);
+                                     'profilePhoto:id,user_id,original_url,thumbnail_url,medium_url,is_profile_photo']);
                     }
                 ])
                 ->withCount(['messages as unread_count' => function($query) use ($user) {
@@ -300,7 +300,7 @@ class ChatController extends Controller
                 ->with(['users' => function($query) use ($user) {
                     // Eager load other users in the chat with their profiles and photos
                     $query->where('users.id', '!=', $user->id)
-                          ->with(['profile', 'profilePhoto']);
+                          ->with(['profile', 'profilePhoto:id,user_id,original_url,thumbnail_url,medium_url,is_profile_photo']);
                 }])
                 ->findOrFail($id);
 
@@ -350,10 +350,10 @@ class ChatController extends Controller
                     'chat' => $chat,
                     'messages' => $messages->toArray(),
                     'pagination' => [
-                        'total' => $totalMessages,
-                        'loaded' => $messages->count(),
-                        'has_more' => $hasMoreMessages,
-                        'oldest_message_id' => $messages->isEmpty() ? null : $messages->first()->id
+                        'total' => $messages->total(),
+                        'per_page' => $messages->perPage(),
+                        'current_page' => $messages->currentPage(),
+                        'last_page' => $messages->lastPage()
                     ]
                 ]
             ]);

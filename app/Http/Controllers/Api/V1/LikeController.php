@@ -488,7 +488,7 @@ class LikeController extends Controller
                                 ->whereColumn('user_id', 'likes.user_id');
                         });
                 })
-                ->with(['user.profile', 'user.profilePhoto'])
+                ->with(['user.profile', 'user.profilePhoto:id,user_id,original_url,thumbnail_url,medium_url,is_profile_photo'])
                 ->paginate($perPage);
 
             return response()->json([
@@ -605,7 +605,7 @@ class LikeController extends Controller
             $perPage = $request->input('per_page', 10);
 
             $likes = Like::where('user_id', $user->id)
-                ->with(['likedUser.profile', 'likedUser.profilePhoto'])
+                ->with(['likedUser.profile', 'likedUser.profilePhoto:id,user_id,original_url,thumbnail_url,medium_url,is_profile_photo'])
                 ->paginate($perPage);
 
             return response()->json([
