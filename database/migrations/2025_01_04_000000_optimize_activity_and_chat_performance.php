@@ -100,7 +100,7 @@ return new class extends Migration
         }
 
         // Create a view for active user statistics (MySQL/PostgreSQL)
-        if (in_array(DB::getDriverName(), ['mysql', 'pgsql'])) {
+        if (DB::getDriverName() === 'mysql') {
             DB::statement('
                 CREATE VIEW active_user_stats AS
                 SELECT 
@@ -118,6 +118,27 @@ return new class extends Migration
                 LEFT JOIN messages m ON u.id = m.sender_id AND DATE(m.created_at) = CURDATE()
                 LEFT JOIN user_activities ua ON u.id = ua.user_id AND DATE(ua.created_at) = CURDATE()
                 WHERE u.registration_completed = 1 
+                AND u.deleted_at IS NULL
+                GROUP BY u.id, u.email, u.is_currently_online, u.last_active_at, u.engagement_score
+            ');
+        } elseif (DB::getDriverName() === 'pgsql') {
+            DB::statement('
+                CREATE VIEW active_user_stats AS
+                SELECT 
+                    u.id,
+                    u.email,
+                    u.is_currently_online,
+                    u.last_active_at,
+                    u.engagement_score,
+                    COUNT(DISTINCT c.id) as active_chats_count,
+                    COUNT(DISTINCT m.id) as messages_sent_today,
+                    COUNT(DISTINCT ua.id) as activities_today
+                FROM users u
+                LEFT JOIN chat_users cu ON u.id = cu.user_id AND cu.left_at IS NULL
+                LEFT JOIN chats c ON cu.chat_id = c.id AND c.is_active = true
+                LEFT JOIN messages m ON u.id = m.sender_id AND DATE(m.created_at) = CURRENT_DATE
+                LEFT JOIN user_activities ua ON u.id = ua.user_id AND DATE(ua.created_at) = CURRENT_DATE
+                WHERE u.registration_completed = true 
                 AND u.deleted_at IS NULL
                 GROUP BY u.id, u.email, u.is_currently_online, u.last_active_at, u.engagement_score
             ');

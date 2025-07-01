@@ -7,6 +7,7 @@ use App\Events\NewMessageEvent;
 use App\Http\Controllers\Controller;
 use App\Models\Chat;
 use App\Models\Message;
+use App\Models\MessageRead;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -126,7 +127,7 @@ class ChatController extends Controller
                     'lastMessage.sender:id,email',
                     'users' => function($query) use ($user) {
                         $query->where('users.id', '!=', $user->id)
-                              ->with(['profile:id,user_id,first_name,last_name,bio', 
+                              ->with(['profile:id,user_id,first_name,last_name,bio',
                                      'profilePhoto:id,user_id,url,is_profile_photo']);
                     }
                 ])
@@ -326,7 +327,7 @@ class ChatController extends Controller
             // Mark messages as read efficiently
             if (!empty($unreadMessageIds)) {
                 MessageRead::markMessagesAsRead($unreadMessageIds, $user->id);
-                
+
                 // Update user's last_read_at in chat_users pivot
                 $user->chats()->updateExistingPivot($chat->id, [
                     'last_read_at' => now()
@@ -498,7 +499,7 @@ class ChatController extends Controller
 
         try {
             $user = $request->user();
-            
+
             // Find chat and verify user access through relationship
             $chat = $user->chats()->findOrFail($id);
 
@@ -756,18 +757,18 @@ class ChatController extends Controller
     {
         try {
             $user = $request->user();
-            
+
             // Find chat and verify user access through relationship
             $chat = $user->chats()->findOrFail($id);
 
             // Get unread message IDs efficiently
             $unreadMessageIds = MessageRead::getUnreadMessageIds($chat->id, $user->id);
-            
+
             // Mark messages as read
             $count = 0;
             if (!empty($unreadMessageIds)) {
                 $count = MessageRead::markMessagesAsRead($unreadMessageIds, $user->id);
-                
+
                 // Update user's last_read_at in chat_users pivot
                 $user->chats()->updateExistingPivot($chat->id, [
                     'last_read_at' => now()
@@ -802,11 +803,11 @@ class ChatController extends Controller
     {
         if (!empty($validated['media_url'])) {
             $extension = strtolower(pathinfo($validated['media_url'], PATHINFO_EXTENSION));
-            
+
             $imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
             $videoExtensions = ['mp4', 'avi', 'mov', 'webm'];
             $audioExtensions = ['mp3', 'wav', 'aac', 'm4a'];
-            
+
             if (in_array($extension, $imageExtensions)) {
                 return 'image';
             } elseif (in_array($extension, $videoExtensions)) {
@@ -817,7 +818,7 @@ class ChatController extends Controller
                 return 'file';
             }
         }
-        
+
         return 'text';
     }
 
@@ -886,13 +887,13 @@ class ChatController extends Controller
 
             // Check if chat already exists
             $existingChat = $user->getChatWith(User::find($otherUserId));
-            
+
             if ($existingChat) {
                 $existingChat->load(['users' => function($query) use ($user) {
                     $query->where('users.id', '!=', $user->id)
                           ->with(['profile:id,user_id,first_name,last_name']);
                 }]);
-                
+
                 return response()->json([
                     'status' => 'success',
                     'message' => 'Chat retrieved',
@@ -995,7 +996,7 @@ class ChatController extends Controller
     {
         try {
             $user = $request->user();
-            
+
             // Get unread counts per chat efficiently
             $unreadCounts = DB::table('messages')
                 ->join('chats', 'messages.chat_id', '=', 'chats.id')
@@ -1065,10 +1066,10 @@ class ChatController extends Controller
     {
         try {
             $user = $request->user();
-            
+
             // Find chat and verify user access
             $chat = $user->chats()->findOrFail($id);
-            
+
             // Update pivot to mark user as left
             $user->chats()->updateExistingPivot($chat->id, [
                 'left_at' => now()
