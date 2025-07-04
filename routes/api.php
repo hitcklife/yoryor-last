@@ -67,6 +67,7 @@ Route::prefix('v1')->group(function () {
         // Profile routes
         Route::prefix('profile')->group(function () {
             Route::get('/me', [ProfileController::class, 'myProfile']);
+            Route::get('/completion-status', [ProfileController::class, 'getCompletionStatus']);
             Route::put('/{profile}', [ProfileController::class, 'update']);
         });
 
@@ -74,6 +75,7 @@ Route::prefix('v1')->group(function () {
         Route::prefix('photos')->group(function () {
             Route::get('/', [UserPhotoController::class, 'index']);
             Route::post('/upload', [UserPhotoController::class, 'upload']);
+            Route::put('/{id}', [UserPhotoController::class, 'update']);
             Route::delete('/{id}', [UserPhotoController::class, 'destroy']);
         });
 
