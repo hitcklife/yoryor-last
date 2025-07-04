@@ -43,7 +43,23 @@ class NewMessageEvent implements ShouldBroadcast
      */
     public function broadcastOn()
     {
-        return new PrivateChannel('chat.' . $this->message->chat_id);
+        // Get all users in the chat to broadcast to their private channels
+        $chat = $this->message->chat;
+        $userIds = $chat->users()->pluck('user_id')->toArray();
+
+        $channels = [
+            new PrivateChannel('chat.' . $this->message->chat_id)
+        ];
+
+        // Add a channel for each user in the chat
+        foreach ($userIds as $userId) {
+            // Skip the sender to avoid duplicate notifications
+            if ($userId != $this->message->sender_id) {
+                $channels[] = new PrivateChannel('user.' . $userId);
+            }
+        }
+
+        return $channels;
     }
 
     /**
@@ -63,8 +79,13 @@ class NewMessageEvent implements ShouldBroadcast
      */
     public function broadcastWith()
     {
+        // Load the chat relationship for the response
+        $this->message->load('chat:id,name,created_at,updated_at,last_activity_at');
+
         return [
-            'message' => $this->message
+            'message' => $this->message,
+            'chat_id' => $this->message->chat_id,
+            'sender_id' => $this->message->sender_id
         ];
     }
 }

@@ -40,4 +40,10 @@ return [
         'app_certificate' => env('AGORA_APP_CERTIFICATE'),
     ],
 
+    'videosdk' => [
+        'api_key' => env('VIDEOSDK_API_KEY'),
+        'secret_key' => env('VIDEOSDK_SECRET_KEY'),
+        'api_endpoint' => env('VIDEOSDK_API_ENDPOINT', 'https://api.videosdk.live/v2'),
+    ],
+
 ];

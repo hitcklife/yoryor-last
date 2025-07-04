@@ -10,9 +10,11 @@ class MessageRead extends Model
 {
     use HasFactory;
 
+    public $timestamps = false;
+
     protected $fillable = [
         'message_id',
-        'user_id', 
+        'user_id',
         'read_at'
     ];
 
@@ -37,17 +39,15 @@ class MessageRead extends Model
     {
         $timestamp = now();
         $reads = [];
-        
+
         foreach ($messageIds as $messageId) {
             $reads[] = [
                 'message_id' => $messageId,
                 'user_id' => $userId,
-                'read_at' => $timestamp,
-                'created_at' => $timestamp,
-                'updated_at' => $timestamp
+                'read_at' => $timestamp
             ];
         }
-        
+
         return static::insertOrIgnore($reads);
     }
 

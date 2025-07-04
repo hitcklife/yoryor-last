@@ -100,6 +100,14 @@ class BroadcastingController extends Controller
                 return $this->authenticateUserChannel($user, $channelName, $socketId);
             }
 
+            if (str_starts_with($channelName, 'private-user.')) {
+                return $this->authenticateUserChatsChannel($user, $channelName, $socketId);
+            }
+
+            if (str_starts_with($channelName, 'user.')) {
+                return $this->authenticateUserChannel($user, $channelName, $socketId);
+            }
+
             // Handle presence channels if needed
             if (str_starts_with($channelName, 'presence-')) {
                 return $this->authenticatePresenceChannel($user, $channelName, $socketId);
@@ -244,6 +252,34 @@ class BroadcastingController extends Controller
 
         // The socket_auth method returns a JSON string, so we need to decode it
         return json_decode($authString, true);
+    }
+
+    /**
+     * Authenticate user chats channel access
+     * This channel is used to notify users about new messages across all their chats
+     */
+    private function authenticateUserChatsChannel($user, string $channelName, string $socketId): JsonResponse
+    {
+        // Extract user ID from channel name (private-user.{userId})
+        $userId = str_replace('private-user.', '', $channelName);
+
+        if (!is_numeric($userId) || (int) $userId !== $user->id) {
+            Log::warning('User chats channel access denied', [
+                'requested_user_id' => $userId,
+                'authenticated_user_id' => $user->id,
+                'channel' => $channelName
+            ]);
+            return response()->json(['error' => 'Forbidden'], 403);
+        }
+
+        $authData = $this->generateAuthSignature($channelName, $socketId);
+
+        Log::info('User chats channel authenticated successfully', [
+            'user_id' => $user->id,
+            'channel' => $channelName
+        ]);
+
+        return response()->json($authData);
     }
 
     /**

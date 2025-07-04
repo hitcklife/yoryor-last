@@ -41,8 +41,10 @@ class CallStatusChangedEvent implements ShouldBroadcast
         $this->call = $call;
         $this->changedBy = $changedBy;
 
-        // Load the relationships for the response
-        $this->call->load(['caller:id,name,profile_photo_path', 'receiver:id,name,profile_photo_path']);
+        // Load the relationships for the response if not already loaded
+        if (!$this->call->relationLoaded('caller') || !$this->call->relationLoaded('receiver')) {
+            $this->call->load(['caller:id,email,profile_photo_path', 'receiver:id,email,profile_photo_path']);
+        }
     }
 
     /**
@@ -56,11 +58,11 @@ class CallStatusChangedEvent implements ShouldBroadcast
         $channels = [];
 
         if ($this->changedBy !== $this->call->caller_id) {
-            $channels[] = new PrivateChannel('user.' . $this->call->caller_id);
+            $channels[] = new PrivateChannel('private-user.' . $this->call->caller_id);
         }
 
         if ($this->changedBy !== $this->call->receiver_id) {
-            $channels[] = new PrivateChannel('user.' . $this->call->receiver_id);
+            $channels[] = new PrivateChannel('private-user.' . $this->call->receiver_id);
         }
 
         return $channels;
@@ -93,12 +95,12 @@ class CallStatusChangedEvent implements ShouldBroadcast
                 'ended_at' => $this->call->ended_at,
                 'caller' => [
                     'id' => $this->call->caller->id,
-                    'name' => $this->call->caller->name,
+                    'email' => $this->call->caller->email,
                     'profile_photo_path' => $this->call->caller->profile_photo_path,
                 ],
                 'receiver' => [
                     'id' => $this->call->receiver->id,
-                    'name' => $this->call->receiver->name,
+                    'email' => $this->call->receiver->email,
                     'profile_photo_path' => $this->call->receiver->profile_photo_path,
                 ],
                 'changed_by' => $this->changedBy,

@@ -139,11 +139,19 @@ class ChatController extends Controller
                 ->orderBy('last_activity_at', 'desc')
                 ->paginate($perPage);
 
-            // Transform the chats to include the other user
+            // Transform the chats to include the other user and add read status to last message
             $chats->getCollection()->transform(function ($chat) use ($user) {
                 // Get the other user from the eager loaded relationship
                 $otherUser = $chat->users->first();
                 $chat->other_user = $otherUser;
+
+                // Add read status to last message if it exists
+                if ($chat->lastMessage) {
+                    $readStatus = $chat->lastMessage->getReadStatusFor($user);
+                    $chat->lastMessage->is_mine = $readStatus['is_mine'];
+                    $chat->lastMessage->is_read = $readStatus['is_read'];
+                    $chat->lastMessage->read_at = $readStatus['read_at'];
+                }
 
                 // Remove the users collection to clean up the response
                 unset($chat->users);
@@ -639,13 +647,19 @@ class ChatController extends Controller
                 'chat_id' => $chat->id,
                 'sender_id' => $user->id,
                 'content' => $validated['content'] ?? null,
-                'media_url' => $validated['media_url'] ?? null,
-                'message_type' => $this->determineMessageType($validated),
+                'media_url' => $mediaUrl,
+                'message_type' => $messageType,
+                'media_data' => $validated['media_data'] ?? null,
+                'reply_to_message_id' => $validated['reply_to_message_id'] ?? null,
                 'sent_at' => now()
             ]);
 
+
             // Update chat activity
             $chat->updateLastActivity();
+
+            // Broadcast real-time event
+            broadcast(new NewMessageEvent($message))->toOthers();
 
             // Transform message for response
             $readStatus = $message->getReadStatusFor($user);
@@ -755,7 +769,7 @@ class ChatController extends Controller
      *     )
      * )
      */
-    public function markMessagesAsRead(Request $request, $id)
+    public function markMessagesAsRead(Request $request, $id, $message = null)
     {
         try {
             $user = $request->user();
@@ -775,6 +789,9 @@ class ChatController extends Controller
                 $user->chats()->updateExistingPivot($chat->id, [
                     'last_read_at' => now()
                 ]);
+
+                // Broadcast read event
+                broadcast(new MessageReadEvent($chat, $user, $count))->toOthers();
             }
 
             return response()->json([

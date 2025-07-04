@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\V1\AgoraController;
 use App\Http\Controllers\Api\V1\BroadcastingController;
+use App\Http\Controllers\Api\V1\VideoCallController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\V1\AuthController;
@@ -100,7 +101,8 @@ Route::prefix('v1')->group(function () {
             Route::delete('/{id}', [ChatController::class, 'deleteChat']);
             Route::post('/{id}/messages', [ChatController::class, 'sendMessage']);
             Route::post('/{id}/read', [ChatController::class, 'markMessagesAsRead']);
-            
+            Route::post('/{id}/messages/{message}/read', [ChatController::class, 'markMessagesAsRead']);
+
             // Message edit and delete routes
             Route::put('/{chat_id}/messages/{message_id}', [ChatController::class, 'editMessage']);
             Route::delete('/{chat_id}/messages/{message_id}', [ChatController::class, 'deleteMessage']);
@@ -120,6 +122,18 @@ Route::prefix('v1')->group(function () {
             Route::post('/{callId}/end', [AgoraController::class, 'endCall']);
             Route::post('/{callId}/reject', [AgoraController::class, 'rejectCall']);
             Route::get('/history', [AgoraController::class, 'getCallHistory']);
+        });
+
+        // Video SDK routes for video/voice calling
+        Route::prefix('video-call')->group(function () {
+            Route::post('/token', [VideoCallController::class, 'getToken']);
+            Route::post('/create-meeting', [VideoCallController::class, 'createMeeting']);
+            Route::get('/validate-meeting/{meetingId}', [VideoCallController::class, 'validateMeeting']);
+            Route::post('/initiate', [VideoCallController::class, 'initiateCall']);
+            Route::post('/{callId}/join', [VideoCallController::class, 'joinCall']);
+            Route::post('/{callId}/end', [VideoCallController::class, 'endCall']);
+            Route::post('/{callId}/reject', [VideoCallController::class, 'rejectCall']);
+            Route::get('/history', [VideoCallController::class, 'getCallHistory']);
         });
 
         // Story routes

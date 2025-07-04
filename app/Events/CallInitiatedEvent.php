@@ -32,8 +32,10 @@ class CallInitiatedEvent implements ShouldBroadcast
     {
         $this->call = $call;
 
-        // Load the relationships for the response
-        $this->call->load(['caller:id,name,profile_photo_path', 'receiver:id,name,profile_photo_path']);
+        // Load the relationships for the response if not already loaded
+        if (!$this->call->relationLoaded('caller') || !$this->call->relationLoaded('receiver')) {
+            $this->call->load(['caller:id,email,profile_photo_path', 'receiver:id,email,profile_photo_path']);
+        }
     }
 
     /**
@@ -43,7 +45,7 @@ class CallInitiatedEvent implements ShouldBroadcast
      */
     public function broadcastOn()
     {
-        return new PrivateChannel('user.' . $this->call->receiver_id);
+        return new PrivateChannel('private-user.' . $this->call->receiver_id);
     }
 
     /**
@@ -71,7 +73,7 @@ class CallInitiatedEvent implements ShouldBroadcast
                 'status' => $this->call->status,
                 'caller' => [
                     'id' => $this->call->caller->id,
-                    'name' => $this->call->caller->name,
+                    'email' => $this->call->caller->email,
                     'profile_photo_path' => $this->call->caller->profile_photo_path,
                 ],
                 'created_at' => $this->call->created_at,

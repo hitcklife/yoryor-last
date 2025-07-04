@@ -20,3 +20,15 @@ Broadcast::channel('chat.{chatId}', function ($user, $chatId) {
     // Check if the user is part of this chat
     return $chat->users()->where('user_id', $user->id)->exists();
 });
+
+// User's chats channel authorization - for receiving updates about new messages across all chats
+Broadcast::channel('private-user.{userId}', function ($user, $userId) {
+    // Ensure the user is only accessing their own channel
+    return (int) $user->id === (int) $userId;
+});
+
+// Legacy user channel authorization (for backward compatibility)
+Broadcast::channel('user.{userId}', function ($user, $userId) {
+    // Ensure the user is only accessing their own channel
+    return (int) $user->id === (int) $userId;
+});
