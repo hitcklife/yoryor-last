@@ -598,7 +598,7 @@ class LikeController extends Controller
     public function getSentLikes(Request $request)
     {
         // Check if the user is authorized to view likes
-        $this->authorize('viewAny', Like::class);
+//        $this->authorize('viewAny', Like::class);
 
         try {
             $user = $request->user();

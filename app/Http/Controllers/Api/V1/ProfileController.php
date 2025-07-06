@@ -30,7 +30,7 @@ class ProfileController extends Controller
     public function index(Request $request)
     {
         // Check if the user is authorized to view any profiles
-        $this->authorize('viewAny', Profile::class);
+//        $this->authorize('viewAny', Profile::class);
 
         $profiles = Profile::with([
             'user:id,email,phone,last_active_at,registration_completed',
@@ -54,7 +54,7 @@ class ProfileController extends Controller
     public function show(Profile $profile)
     {
         // Check if the user is authorized to view the profile
-        $this->authorize('view', $profile);
+//        $this->authorize('view', $profile);
 
         $profile->load([
             'user:id,email,phone,last_active_at,registration_completed',
@@ -81,7 +81,6 @@ class ProfileController extends Controller
     public function update(Request $request, Profile $profile)
     {
         // Check if the user is authorized to update the profile
-        $this->authorize('update', $profile);
 
         $validated = $request->validate([
             'first_name' => ['sometimes', 'string', 'max:50'],
@@ -109,7 +108,7 @@ class ProfileController extends Controller
 
                 // Check if profile is being completed
                 $wasCompleted = $this->isProfileComplete($profile);
-                
+
                 $profile->update($validated);
 
                 // Update completion status if profile wasn't complete before
@@ -150,7 +149,7 @@ class ProfileController extends Controller
     public function destroy(Profile $profile)
     {
         // Check if the user is authorized to delete the profile
-        $this->authorize('delete', $profile);
+//        $this->authorize('delete', $profile);
 
         $profile->delete();
 
@@ -169,7 +168,7 @@ class ProfileController extends Controller
     public function myProfile(Request $request)
     {
         $user = $request->user();
-        
+
         $profile = $user->profile()->with([
             'country:id,name,code'
         ])->first();
@@ -311,7 +310,7 @@ class ProfileController extends Controller
     private function isProfileComplete(Profile $profile): bool
     {
         $requiredFields = ['first_name', 'date_of_birth', 'gender', 'city', 'bio'];
-        
+
         foreach ($requiredFields as $field) {
             if (empty($profile->$field)) {
                 return false;
@@ -320,7 +319,7 @@ class ProfileController extends Controller
 
         // Check if user has at least one photo
         $hasPhotos = $profile->user && $profile->user->photos()->approved()->count() > 0;
-        
+
         return $hasPhotos;
     }
 

@@ -19,6 +19,13 @@ class ImageProcessingService
     const MEDIUM_QUALITY = 90;
     const ORIGINAL_QUALITY = 95;
     
+    protected $mediaUploadService;
+    
+    public function __construct(MediaUploadService $mediaUploadService)
+    {
+        $this->mediaUploadService = $mediaUploadService;
+    }
+    
     /**
      * Process uploaded image and create multiple sizes
      *
@@ -31,77 +38,12 @@ class ImageProcessingService
     public function processImage(UploadedFile $file, int $userId, string $prefix = 'photo'): array
     {
         try {
-            // Create directory for user if it doesn't exist
-            $userDir = "photos/{$userId}";
-            if (!Storage::disk('public')->exists($userDir)) {
-                Storage::disk('public')->makeDirectory($userDir);
-            }
+            // Use the MediaUploadService for S3 upload
+            $result = $this->mediaUploadService->uploadMedia($file, 'profile', $userId, [
+                'prefix' => $prefix
+            ]);
             
-            // Generate unique filename
-            $filename = $prefix . '_' . time() . '_' . uniqid();
-            $extension = $file->getClientOriginalExtension();
-            
-            // Process original image
-            $originalImage = Image::make($file);
-            
-            // Fix orientation based on EXIF data
-            $originalImage->orientate();
-            
-            // Get original dimensions for metadata
-            $originalWidth = $originalImage->width();
-            $originalHeight = $originalImage->height();
-            
-            // Resize original if too large
-            if ($originalWidth > self::ORIGINAL_MAX_SIZE || $originalHeight > self::ORIGINAL_MAX_SIZE) {
-                $originalImage->resize(self::ORIGINAL_MAX_SIZE, self::ORIGINAL_MAX_SIZE, function ($constraint) {
-                    $constraint->aspectRatio();
-                    $constraint->upsize();
-                });
-            }
-            
-            // Create file paths
-            $originalPath = "{$userDir}/{$filename}_original.{$extension}";
-            $mediumPath = "{$userDir}/{$filename}_medium.{$extension}";
-            $thumbnailPath = "{$userDir}/{$filename}_thumbnail.{$extension}";
-            
-            // Save original
-            $originalImage->save(storage_path("app/public/{$originalPath}"), self::ORIGINAL_QUALITY);
-            
-            // Create and save medium size
-            $mediumImage = clone $originalImage;
-            $mediumImage->resize(self::MEDIUM_SIZE, self::MEDIUM_SIZE, function ($constraint) {
-                $constraint->aspectRatio();
-                $constraint->upsize();
-            });
-            $mediumImage->save(storage_path("app/public/{$mediumPath}"), self::MEDIUM_QUALITY);
-            
-            // Create and save thumbnail
-            $thumbnailImage = clone $originalImage;
-            $thumbnailImage->fit(self::THUMBNAIL_SIZE, self::THUMBNAIL_SIZE);
-            $thumbnailImage->save(storage_path("app/public/{$thumbnailPath}"), self::THUMBNAIL_QUALITY);
-            
-            // Generate metadata
-            $metadata = [
-                'original_width' => $originalWidth,
-                'original_height' => $originalHeight,
-                'processed_width' => $originalImage->width(),
-                'processed_height' => $originalImage->height(),
-                'file_size' => $file->getSize(),
-                'mime_type' => $file->getMimeType(),
-                'processing_timestamp' => now()->toISOString()
-            ];
-            
-            return [
-                'original_url' => Storage::url($originalPath),
-                'medium_url' => Storage::url($mediumPath),
-                'thumbnail_url' => Storage::url($thumbnailPath),
-                'metadata' => $metadata,
-                'file_paths' => [
-                    'original' => $originalPath,
-                    'medium' => $mediumPath,
-                    'thumbnail' => $thumbnailPath
-                ]
-            ];
+            return $result;
             
         } catch (Exception $e) {
             throw new Exception("Image processing failed: " . $e->getMessage());
@@ -109,24 +51,14 @@ class ImageProcessingService
     }
     
     /**
-     * Delete image files from storage
+     * Delete image files from S3 storage
      *
      * @param array $filePaths
      * @return bool
      */
     public function deleteImageFiles(array $filePaths): bool
     {
-        try {
-            foreach ($filePaths as $path) {
-                if (Storage::disk('public')->exists($path)) {
-                    Storage::disk('public')->delete($path);
-                }
-            }
-            return true;
-        } catch (Exception $e) {
-            \Log::error("Failed to delete image files: " . $e->getMessage());
-            return false;
-        }
+        return $this->mediaUploadService->deleteMediaFiles($filePaths);
     }
     
     /**
@@ -139,11 +71,47 @@ class ImageProcessingService
      */
     public function extractFilePaths(string $originalUrl, string $mediumUrl, string $thumbnailUrl): array
     {
+        // Extract S3 paths from URLs
+        $originalPath = $this->extractS3PathFromUrl($originalUrl);
+        $mediumPath = $this->extractS3PathFromUrl($mediumUrl);
+        $thumbnailPath = $this->extractS3PathFromUrl($thumbnailUrl);
+        
         return [
-            'original' => str_replace('/storage/', '', $originalUrl),
-            'medium' => str_replace('/storage/', '', $mediumUrl),
-            'thumbnail' => str_replace('/storage/', '', $thumbnailUrl)
+            'original' => $originalPath,
+            'medium' => $mediumPath,
+            'thumbnail' => $thumbnailPath
         ];
+    }
+    
+    /**
+     * Extract S3 path from URL
+     *
+     * @param string $url
+     * @return string|null
+     */
+    private function extractS3PathFromUrl(string $url): ?string
+    {
+        if (empty($url)) {
+            return null;
+        }
+        
+        // Parse the URL to extract the path
+        $parsedUrl = parse_url($url);
+        if (!$parsedUrl || !isset($parsedUrl['path'])) {
+            return null;
+        }
+        
+        // Remove leading slash from path
+        $path = ltrim($parsedUrl['path'], '/');
+        
+        // If using CloudFront or custom domain, the path might be the full S3 key
+        // If using direct S3 URLs, we might need to remove the bucket name
+        $bucketName = config('filesystems.disks.s3.bucket');
+        if ($bucketName && str_starts_with($path, $bucketName . '/')) {
+            $path = substr($path, strlen($bucketName) + 1);
+        }
+        
+        return $path ?: null;
     }
     
     /**
@@ -155,17 +123,9 @@ class ImageProcessingService
      * @param string $size
      * @return string
      */
-    public function getImageUrl(string $originalUrl, string $mediumUrl, string $thumbnailUrl, string $size = 'medium'): string
+    public function getImageUrl(string $originalUrl, string $mediumUrl = null, string $thumbnailUrl = null, string $size = 'medium'): string
     {
-        switch ($size) {
-            case 'thumbnail':
-                return $thumbnailUrl;
-            case 'original':
-                return $originalUrl;
-            case 'medium':
-            default:
-                return $mediumUrl;
-        }
+        return $this->mediaUploadService->getMediaUrl($originalUrl, $mediumUrl, $thumbnailUrl, $size);
     }
     
     /**
@@ -193,5 +153,29 @@ class ImageProcessingService
         }
         
         return true;
+    }
+    
+    /**
+     * Process image for profile photos with specific requirements
+     *
+     * @param UploadedFile $file
+     * @param int $userId
+     * @param bool $isProfilePhoto
+     * @return array
+     * @throws Exception
+     */
+    public function processProfileImage(UploadedFile $file, int $userId, bool $isProfilePhoto = false): array
+    {
+        try {
+            $context = $isProfilePhoto ? 'profile_photos' : 'photos';
+            $result = $this->mediaUploadService->uploadMedia($file, $context, $userId, [
+                'is_profile_photo' => $isProfilePhoto
+            ]);
+            
+            return $result;
+            
+        } catch (Exception $e) {
+            throw new Exception("Profile image processing failed: " . $e->getMessage());
+        }
     }
 } 

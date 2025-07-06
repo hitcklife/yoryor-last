@@ -95,12 +95,20 @@ class UserPhotoController extends Controller
      *     @OA\Response(
      *         response=422,
      *         description="Validation error",
-     *         @OA\JsonContent(ref="#/components/schemas/Error")
+     *         @OA\JsonContent(
+     *             @OA\Property(property="status", type="string", example="error"),
+     *             @OA\Property(property="message", type="string", example="Error message"),
+     *             @OA\Property(property="error", type="string", example="Error details")
+     *         )
      *     ),
      *     @OA\Response(
      *         response=500,
      *         description="Server error",
-     *         @OA\JsonContent(ref="#/components/schemas/Error")
+     *         @OA\JsonContent(
+     *             @OA\Property(property="status", type="string", example="error"),
+     *             @OA\Property(property="message", type="string", example="Error message"),
+     *             @OA\Property(property="error", type="string", example="Error details")
+     *         )
      *     )
      * )
      */
@@ -149,7 +157,7 @@ class UserPhotoController extends Controller
 
             // Handle profile photo logic
             $isProfilePhoto = $request->input('is_profile_photo', false);
-            
+
             DB::transaction(function() use ($user, $processedImages, $isProfilePhoto, $request, &$photo) {
                 if ($isProfilePhoto) {
                     // If this is set as profile photo, unset any existing profile photos
@@ -267,7 +275,11 @@ class UserPhotoController extends Controller
      *     @OA\Response(
      *         response=500,
      *         description="Server error",
-     *         @OA\JsonContent(ref="#/components/schemas/Error")
+     *         @OA\JsonContent(
+     *             @OA\Property(property="status", type="string", example="error"),
+     *             @OA\Property(property="message", type="string", example="Error message"),
+     *             @OA\Property(property="error", type="string", example="Error details")
+     *         )
      *     )
      * )
      */
@@ -276,9 +288,9 @@ class UserPhotoController extends Controller
         try {
             $user = $request->user();
             $size = $request->query('size', 'medium');
-            
+
             $photos = UserPhoto::where('user_id', $user->id)
-                ->approved()
+//                ->approved()
                 ->ordered()
                 ->get();
 
@@ -360,7 +372,11 @@ class UserPhotoController extends Controller
      *     @OA\Response(
      *         response=500,
      *         description="Server error",
-     *         @OA\JsonContent(ref="#/components/schemas/Error")
+     *         @OA\JsonContent(
+     *             @OA\Property(property="status", type="string", example="error"),
+     *             @OA\Property(property="message", type="string", example="Error message"),
+     *             @OA\Property(property="error", type="string", example="Error details")
+     *         )
      *     )
      * )
      */
@@ -383,7 +399,6 @@ class UserPhotoController extends Controller
                 if ($photo->is_profile_photo) {
                     $nextPhoto = UserPhoto::where('user_id', $user->id)
                         ->where('id', '!=', $photo->id)
-                        ->approved()
                         ->orderBy('order', 'asc')
                         ->first();
 
@@ -398,8 +413,10 @@ class UserPhotoController extends Controller
                     $photo->medium_url,
                     $photo->thumbnail_url
                 );
-                
-                $this->imageProcessingService->deleteImageFiles($filePaths);
+
+                // Convert associative array to simple array of paths, filtering out null values
+                $pathsToDelete = array_filter(array_values($filePaths));
+                $this->imageProcessingService->deleteImageFiles($pathsToDelete);
 
                 // Delete the photo record
                 $photo->delete();

@@ -43,6 +43,24 @@ class EnhancedChatController extends Controller
      *             @OA\Property(property="media_url", type="string", example="https://example.com/image.jpg", description="Media URL"),
      *             @OA\Property(property="reply_to_message_id", type="integer", example=123, description="ID of message being replied to")
      *         )
+     *     ),
+     *     @OA\Response(
+     *         response=201,
+     *         description="Message sent successfully",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="status", type="string", example="success"),
+     *             @OA\Property(property="message", type="string", example="Message sent successfully"),
+     *             @OA\Property(property="data", type="object")
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=500,
+     *         description="Failed to send message",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="status", type="string", example="error"),
+     *             @OA\Property(property="message", type="string", example="Error message"),
+     *             @OA\Property(property="error", type="string", example="Error details")
+     *         )
      *     )
      * )
      */

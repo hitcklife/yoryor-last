@@ -42,6 +42,10 @@ Route::prefix('v1')->group(function () {
     Route::post('/broadcasting/auth', [BroadcastingController::class, 'authenticate'])->middleware('auth:sanctum');
     // Auth routes
     Route::prefix('auth')->group(function () {
+
+        // Home page route
+        Route::get('/home-stats', [HomeController::class, 'index']);
+
 //        Route::post('/authenticate', [AuthController::class, 'authenticate'])->middleware('rate.limit.otp');
         Route::post('/authenticate', [AuthController::class, 'authenticate']);
         Route::post('/check-email', [AuthController::class, 'checkEmail']);
@@ -61,8 +65,6 @@ Route::prefix('v1')->group(function () {
 
     // Protected routes that require authentication
     Route::middleware('auth:sanctum')->group(function () {
-        // Home page route
-        Route::get('/home', [HomeController::class, 'index']);
 
 
         // Profile routes

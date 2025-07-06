@@ -11,6 +11,7 @@ use App\Models\Chat;
 use App\Models\Message;
 use App\Models\MessageRead;
 use App\Models\User;
+use App\Services\MediaUploadService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -24,6 +25,13 @@ use Illuminate\Support\Facades\Storage;
  */
 class ChatController extends Controller
 {
+    protected $mediaUploadService;
+
+    public function __construct(MediaUploadService $mediaUploadService)
+    {
+        $this->mediaUploadService = $mediaUploadService;
+    }
+
     /**
      * Get all chats for the authenticated user
      *
@@ -524,6 +532,7 @@ class ChatController extends Controller
             // Handle file upload if present
             $mediaUrl = $validated['media_url'] ?? null;
             $messageType = $validated['message_type'] ?? 'text';
+            $mediaData = $validated['media_data'] ?? [];
 
             if ($request->hasFile('media_file')) {
                 try {
@@ -534,18 +543,15 @@ class ChatController extends Controller
                         throw new \Exception('Invalid file upload');
                     }
 
-                    $mimeType = $file->getMimeType();
-                    $extension = $file->getClientOriginalExtension();
-
                     // Determine message type based on mime type if not provided
                     if (!isset($validated['message_type'])) {
+                        $mimeType = $file->getMimeType();
                         if (strpos($mimeType, 'image/') === 0) {
                             $messageType = 'image';
                         } elseif (strpos($mimeType, 'video/') === 0) {
                             $messageType = 'video';
                         } elseif (strpos($mimeType, 'audio/') === 0) {
                             // Check if it's specifically a voice message based on media_data
-                            $mediaData = $validated['media_data'] ?? [];
                             if (isset($mediaData['duration']) && $mediaData['duration'] <= 300) { // Voice messages typically under 5 minutes
                                 $messageType = 'voice';
                             } else {
@@ -556,83 +562,39 @@ class ChatController extends Controller
                         }
                     } else {
                         // If message_type is explicitly set to 'voice', ensure it's an audio file
-                        if ($validated['message_type'] === 'voice' && strpos($mimeType, 'audio/') !== 0) {
+                        if ($validated['message_type'] === 'voice' && strpos($file->getMimeType(), 'audio/') !== 0) {
                             throw new \Exception('Voice messages must be audio files');
                         }
                     }
 
-                    // Generate a unique filename
-                    $filename = uniqid('chat_' . $chat->id . '_', true) . '.' . $extension;
-
-                    // Define the path based on message type
-                    $folderName = $messageType === 'voice' ? 'voices' : $messageType . 's';
-                    $path = 'chats/' . $chat->id . '/' . $folderName . '/' . $filename;
-
-                    // Log file info before upload
-                    \Log::debug('Attempting S3 upload', [
+                    // Use MediaUploadService to upload file
+                    $uploadOptions = [
                         'chat_id' => $chat->id,
-                        'filename' => $filename,
-                        'path' => $path,
-                        'mime_type' => $mimeType,
-                        'size' => $file->getSize(),
-                        'is_valid' => $file->isValid(),
-                        'original_name' => $file->getClientOriginalName(),
-                    ]);
+                        'message_type' => $messageType
+                    ];
 
-                    $store = false;
-                    try {
-                        $stream = fopen($file->getRealPath(), 'r');
-
-                        if ($stream === false) {
-                            throw new \Exception('Could not open file for upload');
+                    // Add voice-specific options
+                    if ($messageType === 'voice') {
+                        $uploadOptions['is_voice_message'] = true;
+                        $uploadOptions['duration'] = $mediaData['duration'] ?? null;
+                        
+                        // Set a default content for voice messages if none provided
+                        if (empty($validated['content'])) {
+                            $validated['content'] = 'Voice Message';
                         }
-
-                        $store = Storage::disk('s3')->put($path, $stream);
-                        \Log::debug('S3 upload result', [
-                            'path' => $path,
-                            'store' => $store
-                        ]);
-
-                        if (is_resource($stream)) {
-                            fclose($stream);
-                        }
-
-                        // Get the full URL for the file
-                        $mediaUrl = Storage::disk('s3')->url($path);
-
-                        // Store additional media data
-                        $mediaData = $validated['media_data'] ?? [];
-                        $mediaData['original_filename'] = $file->getClientOriginalName();
-                        $mediaData['size'] = $file->getSize();
-                        $mediaData['mime_type'] = $mimeType;
-
-                        // For voice messages, ensure duration is stored
-                        if ($messageType === 'voice') {
-                            // If duration wasn't provided in the request, you might want to extract it
-                            // from the audio file using a library like getID3 or FFmpeg
-                            if (!isset($mediaData['duration'])) {
-                                $mediaData['duration'] = $this->extractAudioDuration($file->getRealPath());
-                            }
-
-                            // Add voice-specific metadata
-                            $mediaData['is_voice_message'] = true;
-
-                            // Set a default content for voice messages if none provided
-                            if (empty($validated['content'])) {
-                                $validated['content'] = 'Voice Message';
-                            }
-                        }
-
-                        $validated['media_data'] = $mediaData;
-
-                    } catch (\Exception $e) {
-                        \Log::error('S3 upload exception', [
-                            'path' => $path,
-                            'error' => $e->getMessage(),
-                            'trace' => $e->getTraceAsString()
-                        ]);
-                        throw $e;
                     }
+
+                    // Upload using MediaUploadService
+                    $uploadResult = $this->mediaUploadService->uploadMedia(
+                        $file, 
+                        'chat', 
+                        $user->id, 
+                        $uploadOptions
+                    );
+
+                    $mediaUrl = $uploadResult['original_url'];
+                    $mediaData = array_merge($mediaData, $uploadResult['metadata']);
+
                 } catch (\Exception $e) {
                     return response()->json([
                         'status' => 'error',
@@ -649,11 +611,10 @@ class ChatController extends Controller
                 'content' => $validated['content'] ?? null,
                 'media_url' => $mediaUrl,
                 'message_type' => $messageType,
-                'media_data' => $validated['media_data'] ?? null,
+                'media_data' => $mediaData,
                 'reply_to_message_id' => $validated['reply_to_message_id'] ?? null,
                 'sent_at' => now()
             ]);
-
 
             // Update chat activity
             $chat->updateLastActivity();
@@ -684,23 +645,6 @@ class ChatController extends Controller
                 'message' => 'Failed to send message',
                 'error' => $e->getMessage()
             ], 500);
-        }
-    }
-
-    /**
-     * Extract audio duration from file (helper method)
-     * You might want to use a library like getID3 or FFmpeg for more accurate results
-     */
-    private function extractAudioDuration($filePath)
-    {
-        // Basic duration extraction - you might want to use a more robust solution
-        // For now, return null if we can't determine duration
-        try {
-            // This is a placeholder - implement actual duration extraction
-            // You could use getID3 library or FFmpeg
-            return null;
-        } catch (\Exception $e) {
-            return null;
         }
     }
 

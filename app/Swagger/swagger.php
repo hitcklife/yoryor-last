@@ -23,7 +23,7 @@ namespace App\Swagger;
 
 /**
  * @OA\Server(
- *     url="/api",
+ *     url="/api/",
  *     description="API Server"
  * )
  */

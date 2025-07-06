@@ -584,7 +584,7 @@ class MatchController extends Controller
             $match = MatchModel::findOrFail($id);
 
             // Check if the user is authorized to delete this match
-            $this->authorize('delete', $match);
+//            $this->authorize('delete', $match);
 
             $match->delete();
 

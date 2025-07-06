@@ -12,6 +12,17 @@ use Illuminate\Validation\ValidationException;
 
 class AuthService
 {
+    protected $mediaUploadService;
+    protected $imageProcessingService;
+
+    public function __construct(
+        MediaUploadService $mediaUploadService,
+        ImageProcessingService $imageProcessingService
+    ) {
+        $this->mediaUploadService = $mediaUploadService;
+        $this->imageProcessingService = $imageProcessingService;
+    }
+
     /**
      * Register a new user
      *
@@ -146,48 +157,9 @@ class AuthService
      *
      * @param User $user
      * @param array $data
-     * @return string[]
+     * @return User
      * @throws \Exception
      */
-    // Add this method to the AuthService class
-    private function generateThumbnails($originalPath, $filename, $directory, $user)
-    {
-        $thumbnailUrl = null;
-        $mediumUrl = null;
-
-        try {
-            // Use Laravel's built-in image manipulation instead of laravel-thumbnail
-            $image = \Intervention\Image\Facades\Image::make(storage_path('app/public/' . $originalPath));
-
-            // Generate thumbnail (150x150px)
-            $thumbnailFilename = 'thumb_' . $filename;
-            $thumbnailPath = $directory . '/' . $thumbnailFilename;
-            $thumbnailImage = $image->fit(150, 150);
-
-            // Save thumbnail to your specific directory
-            \Storage::disk('public')->put($thumbnailPath, (string) $thumbnailImage->encode());
-            $thumbnailUrl = '/storage/' . $thumbnailPath;
-
-            // Generate medium size image (400x400px)
-            $mediumFilename = 'medium_' . $filename;
-            $mediumPath = $directory . '/' . $mediumFilename;
-            $mediumImage = $image->fit(400, 400);
-
-            // Save medium image to your specific directory
-            \Storage::disk('public')->put($mediumPath, (string) $mediumImage->encode());
-            $mediumUrl = '/storage/' . $mediumPath;
-
-        } catch (\Exception $e) {
-            \Log::error("Failed to generate thumbnails: " . $e->getMessage());
-            // Fallback to original
-            $thumbnailUrl = '/storage/' . $originalPath;
-            $mediumUrl = '/storage/' . $originalPath;
-        }
-
-        return [$thumbnailUrl, $mediumUrl];
-    }
-
-    // Update the completeRegistration method photo processing section
     public function completeRegistration(User $user, array $data): User
     {
         try {
@@ -253,8 +225,6 @@ class AuthService
                 ]
             );
 
-            // ... existing code until photo handling ...
-
             // Handle photos if provided
             if (isset($data['photos']) && is_array($data['photos']) && !empty($data['photos'])) {
                 $mainPhotoIndex = isset($data['mainPhotoIndex']) ? (int)$data['mainPhotoIndex'] : 0;
@@ -282,45 +252,43 @@ class AuthService
                     $mediumUrl = null;
 
                     if ($photoData instanceof \Illuminate\Http\UploadedFile) {
-                        // Handle uploaded file from web
-                        $filename = time() . '_' . $index . '_' . $photoData->getClientOriginalName();
-                        $directory = 'photos/' . $user->id;
+                        // Handle uploaded file from web using MediaUploadService
+                        try {
+                            $uploadResult = $this->mediaUploadService->uploadMedia(
+                                $photoData, 
+                                'profile_photos', 
+                                $user->id, 
+                                ['is_profile_photo' => $isProfilePhoto]
+                            );
 
-                        // Ensure directory exists
-                        if (!\Storage::disk('public')->exists($directory)) {
-                            \Storage::disk('public')->makeDirectory($directory);
-                        }
+                            $originalUrl = $uploadResult['original_url'];
+                            $thumbnailUrl = $uploadResult['thumbnail_url'];
+                            $mediumUrl = $uploadResult['medium_url'];
 
-                        // Store original file
-                        $originalPath = $photoData->storeAs($directory, $filename, 'public');
-                        $originalUrl = '/storage/' . $originalPath;
-
-                        // Generate thumbnails using the new method
-                        [$thumbnailUrl, $mediumUrl] = $this->generateThumbnails($originalPath, $filename, $directory, $user);
-
-                    } else if (is_array($photoData) && isset($photoData['name'])) {
-                        // Handle photo data from mobile app
-                        $filename = $photoData['name'];
-                        $directory = 'photos/' . $user->id;
-
-                        // Ensure directory exists
-                        if (!\Storage::disk('public')->exists($directory)) {
-                            \Storage::disk('public')->makeDirectory($directory);
-                        }
-
-                        // For mobile uploads, assume the original file already exists in the storage
-                        $originalStoragePath = $directory . '/' . $filename;
-                        $fullOriginalPath = storage_path('app/public/' . $originalStoragePath);
-                        $originalUrl = '/storage/' . $originalStoragePath;
-
-                        // Check if the original file exists, if not skip this photo
-                        if (!file_exists($fullOriginalPath)) {
-                            \Log::warning("Photo file not found: " . $fullOriginalPath);
+                        } catch (\Exception $e) {
+                            \Log::error("Failed to upload photo: " . $e->getMessage());
                             continue;
                         }
 
-                        // Generate thumbnails using the new method
-                        [$thumbnailUrl, $mediumUrl] = $this->generateThumbnails($originalStoragePath, $filename, $directory, $user);
+                    } else if (is_array($photoData) && isset($photoData['name'])) {
+                        // Handle photo data from mobile app
+                        // For mobile uploads, we assume the file is already uploaded to S3
+                        // and we just need to create the database record
+                        $filename = $photoData['name'];
+                        $s3Path = "media/profile_photos/{$user->id}/{$filename}";
+                        
+                        // Check if the file exists in S3
+                        if (!Storage::disk('s3')->exists($s3Path)) {
+                            \Log::warning("Photo file not found in S3: " . $s3Path);
+                            continue;
+                        }
+
+                        $originalUrl = Storage::disk('s3')->url($s3Path);
+                        
+                        // For mobile uploads, we might need to generate thumbnails
+                        // This could be done asynchronously or on-demand
+                        $thumbnailUrl = $originalUrl; // Fallback to original for now
+                        $mediumUrl = $originalUrl; // Fallback to original for now
                     } else {
                         // Skip invalid photo data
                         continue;

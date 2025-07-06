@@ -7,9 +7,12 @@ use App\Http\Resources\StoryCollection;
 use App\Http\Resources\StoryResource;
 use App\Models\UserStory;
 use App\Models\User;
+use App\Services\MediaUploadService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
 
 /**
  * @OA\Tag(
@@ -17,8 +20,16 @@ use Illuminate\Support\Facades\Validator;
  *     description="API Endpoints for managing user stories"
  * )
  */
+
 class StoryController extends Controller
 {
+    protected $mediaUploadService;
+
+    public function __construct(MediaUploadService $mediaUploadService)
+    {
+        $this->mediaUploadService = $mediaUploadService;
+    }
+
     /**
      * Get stories from matched users
      *
@@ -117,7 +128,7 @@ class StoryController extends Controller
      * @OA\Post(
      *     path="/v1/stories",
      *     summary="Create a new story",
-     *     description="Creates a new story for the authenticated user",
+     *     description="Creates a new story for the authenticated user with optimized media processing and AWS S3 storage",
      *     operationId="createStory",
      *     tags={"Stories"},
      *     security={{"bearerAuth":{}}},
@@ -130,18 +141,12 @@ class StoryController extends Controller
      *                 @OA\Property(
      *                     property="media",
      *                     type="file",
-     *                     description="The media file (image or video)"
-     *                 ),
-     *                 @OA\Property(
-     *                     property="type",
-     *                     type="string",
-     *                     enum={"image", "video"},
-     *                     default="image",
-     *                     description="The type of media"
+     *                     description="The media file (image or video) - max 50MB for images, 100MB for videos"
      *                 ),
      *                 @OA\Property(
      *                     property="caption",
      *                     type="string",
+     *                     maxLength=500,
      *                     description="Optional caption for the story"
      *                 )
      *             )
@@ -156,7 +161,17 @@ class StoryController extends Controller
      *             @OA\Property(
      *                 property="data",
      *                 type="object",
-     *                 ref="#/components/schemas/StoryResource"
+     *                 @OA\Property(property="id", type="integer", example=1),
+     *                 @OA\Property(property="user_id", type="integer", example=1),
+     *                 @OA\Property(property="media_url", type="string", example="https://cdn.example.com/stories/story.webp"),
+     *                 @OA\Property(property="thumbnail_url", type="string", example="https://cdn.example.com/stories/story-thumb.webp"),
+     *                 @OA\Property(property="type", type="string", example="image"),
+     *                 @OA\Property(property="caption", type="string", example="My story caption"),
+     *                 @OA\Property(property="created_at", type="string", format="date-time"),
+     *                 @OA\Property(property="expires_at", type="string", format="date-time"),
+     *                 @OA\Property(property="status", type="string", example="active"),
+     *                 @OA\Property(property="is_expired", type="boolean", example=false),
+     *                 @OA\Property(property="user", type="object", nullable=true)
      *             )
      *         )
      *     ),
@@ -182,6 +197,23 @@ class StoryController extends Controller
      *         )
      *     ),
      *     @OA\Response(
+     *         response=413,
+     *         description="File too large",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="status", type="string", example="error"),
+     *             @OA\Property(property="message", type="string", example="File size exceeds maximum limit")
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=422,
+     *         description="Validation error",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="status", type="string", example="error"),
+     *             @OA\Property(property="message", type="string", example="Validation failed"),
+     *             @OA\Property(property="errors", type="object")
+     *         )
+     *     ),
+     *     @OA\Response(
      *         response=500,
      *         description="Server error",
      *         @OA\JsonContent(
@@ -195,50 +227,47 @@ class StoryController extends Controller
     public function createStory(Request $request)
     {
         try {
-            $validator = Validator::make($request->all(), [
-                'media' => 'required|file|mimes:jpeg,png,jpg,gif,mp4,mov,avi|max:20480',
-                'type' => 'required|in:image,video',
-                'caption' => 'nullable|string|max:500',
-            ]);
-
+            // Validate the request
+            $validator = $this->validateStoryRequest($request);
+            
             if ($validator->fails()) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Validation error',
                     'errors' => $validator->errors()
-                ], 400);
+                ], 422);
             }
 
             $user = $request->user();
             $mediaFile = $request->file('media');
-            $type = $request->input('type', 'image');
+            $caption = $request->input('caption');
 
-            // Generate a unique filename
-            $filename = time() . '_' . uniqid() . '.' . $mediaFile->getClientOriginalExtension();
+            // Check if user has too many active stories (optional limit)
+            $activeStoriesCount = UserStory::where('user_id', $user->id)
+                ->where('status', 'active')
+                ->where('expires_at', '>', now())
+                ->count();
 
-            // Store the file
-            $mediaPath = $mediaFile->storeAs('stories', $filename, 'public');
-            $mediaUrl = Storage::url($mediaPath);
-
-            // Generate thumbnail for videos or use the image itself for images
-            $thumbnailUrl = null;
-            if ($type === 'image') {
-                $thumbnailUrl = $mediaUrl;
-            } else {
-                // For video, we would normally generate a thumbnail here
-                // This is a simplified version
-                $thumbnailUrl = $mediaUrl . '.thumbnail.jpg';
+            if ($activeStoriesCount >= 5) { // Max 5 active stories
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Maximum active stories limit reached (5 stories)',
+                    'error_code' => 'story_limit_exceeded'
+                ], 422);
             }
 
-            // Create the story
-            $story = UserStory::create([
+            // Process and upload media using MediaUploadService
+            $uploadResult = $this->processAndUploadMedia($mediaFile, $user->id);
+
+            // Create the story record
+            $story = $this->createStoryRecord($user->id, $uploadResult, $caption);
+
+            // Log successful story creation
+            Log::info('Story created successfully', [
                 'user_id' => $user->id,
-                'media_url' => $mediaUrl,
-                'thumbnail_url' => $thumbnailUrl,
-                'type' => $type,
-                'caption' => $request->input('caption'),
-                'expires_at' => now()->addHours(24),
-                'status' => 'active',
+                'story_id' => $story->id,
+                'media_type' => $uploadResult['media_type'],
+                'file_size' => $uploadResult['metadata']['file_size'] ?? null
             ]);
 
             return (new StoryResource($story))
@@ -248,12 +277,139 @@ class StoryController extends Controller
                 ])
                 ->response()
                 ->setStatusCode(201);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
         } catch (\Exception $e) {
+            Log::error('Story creation failed', [
+                'user_id' => $request->user()->id ?? null,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to create story',
-                'error' => $e->getMessage()
+                'error' => app()->environment('local') ? $e->getMessage() : 'Internal server error'
             ], 500);
+        }
+    }
+
+    /**
+     * Validate story creation request
+     *
+     * @param Request $request
+     * @return \Illuminate\Validation\Validator
+     */
+    private function validateStoryRequest(Request $request)
+    {
+        return Validator::make($request->all(), [
+            'media' => [
+                'required',
+                'file',
+                'mimes:jpeg,png,jpg,gif,webp,mp4,mov,avi,webm',
+                'max:102400' // 100MB max
+            ],
+            'caption' => [
+                'nullable',
+                'string',
+                'max:500'
+            ]
+        ], [
+            'media.required' => 'Media file is required',
+            'media.file' => 'Media must be a valid file',
+            'media.mimes' => 'Media must be an image (jpeg, png, jpg, gif, webp) or video (mp4, mov, avi, webm)',
+            'media.max' => 'Media file size cannot exceed 100MB',
+            'caption.max' => 'Caption cannot exceed 500 characters'
+        ]);
+    }
+
+    /**
+     * Process and upload media using MediaUploadService
+     *
+     * @param \Illuminate\Http\UploadedFile $mediaFile
+     * @param int $userId
+     * @return array
+     * @throws \Exception
+     */
+    private function processAndUploadMedia($mediaFile, int $userId): array
+    {
+        try {
+            // Upload and process media using MediaUploadService
+            $uploadResult = $this->mediaUploadService->uploadMedia(
+                $mediaFile, 
+                'story', 
+                $userId, 
+                [
+                    'context' => 'user_story',
+                    'optimize' => true,
+                    'generate_thumbnails' => true
+                ]
+            );
+
+            // Ensure we have required URLs
+            if (!isset($uploadResult['original_url'])) {
+                throw new \Exception('Media upload failed - no URL returned');
+            }
+
+            return $uploadResult;
+
+        } catch (\Exception $e) {
+            Log::error('Media processing failed for story', [
+                'user_id' => $userId,
+                'file_name' => $mediaFile->getClientOriginalName(),
+                'file_size' => $mediaFile->getSize(),
+                'mime_type' => $mediaFile->getMimeType(),
+                'error' => $e->getMessage()
+            ]);
+
+            throw new \Exception('Failed to process media: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Create story record in database
+     *
+     * @param int $userId
+     * @param array $uploadResult
+     * @param string|null $caption
+     * @return UserStory
+     */
+    private function createStoryRecord(int $userId, array $uploadResult, ?string $caption): UserStory
+    {
+        return DB::transaction(function() use ($userId, $uploadResult, $caption) {
+            return UserStory::create([
+                'user_id' => $userId,
+                'media_url' => $uploadResult['original_url'],
+                'thumbnail_url' => $uploadResult['thumbnail_url'] ?? $uploadResult['original_url'],
+                'type' => $this->determineStoryType($uploadResult['media_type']),
+                'caption' => $caption,
+                'expires_at' => now()->addHours(24),
+                'status' => 'active',
+                'metadata' => $uploadResult['metadata'] ?? []
+            ]);
+        });
+    }
+
+    /**
+     * Determine story type from media type
+     *
+     * @param string $mediaType
+     * @return string
+     */
+    private function determineStoryType(string $mediaType): string
+    {
+        switch ($mediaType) {
+            case 'image':
+                return 'image';
+            case 'video':
+                return 'video';
+            default:
+                return 'image'; // Default fallback
         }
     }
 
@@ -331,24 +487,18 @@ class StoryController extends Controller
                 ], 403);
             }
 
-            // Delete the media file if it exists
-            if ($story->media_url) {
-                $path = str_replace('/storage/', '', $story->media_url);
-                if (Storage::disk('public')->exists($path)) {
-                    Storage::disk('public')->delete($path);
-                }
-            }
+            // Delete media files from S3 using MediaUploadService
+            $this->deleteStoryMediaFiles($story);
 
-            // Delete the thumbnail if it exists and is different from the media
-            if ($story->thumbnail_url && $story->thumbnail_url !== $story->media_url) {
-                $path = str_replace('/storage/', '', $story->thumbnail_url);
-                if (Storage::disk('public')->exists($path)) {
-                    Storage::disk('public')->delete($path);
-                }
-            }
-
-            // Delete the story
+            // Delete the story record
             $story->delete();
+
+            // Log successful deletion
+            Log::info('Story deleted successfully', [
+                'user_id' => $user->id,
+                'story_id' => $story->id,
+                'story_type' => $story->type
+            ]);
 
             return response()->json([
                 'status' => 'success',
@@ -360,12 +510,88 @@ class StoryController extends Controller
                 'message' => 'Story not found'
             ], 404);
         } catch (\Exception $e) {
+            Log::error('Story deletion failed', [
+                'user_id' => $request->user()->id ?? null,
+                'story_id' => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to delete story',
-                'error' => $e->getMessage()
+                'error' => app()->environment('local') ? $e->getMessage() : 'Internal server error'
             ], 500);
         }
+    }
+
+    /**
+     * Delete story media files from S3
+     *
+     * @param UserStory $story
+     * @return void
+     */
+    private function deleteStoryMediaFiles(UserStory $story): void
+    {
+        try {
+            $filePaths = [];
+
+            // Collect all file paths that need to be deleted
+            if ($story->media_url) {
+                $filePaths[] = $this->extractS3PathFromUrl($story->media_url);
+            }
+
+            if ($story->thumbnail_url && $story->thumbnail_url !== $story->media_url) {
+                $filePaths[] = $this->extractS3PathFromUrl($story->thumbnail_url);
+            }
+
+            // Filter out null paths
+            $filePaths = array_filter($filePaths);
+
+            if (!empty($filePaths)) {
+                $this->mediaUploadService->deleteMediaFiles($filePaths);
+            }
+
+        } catch (\Exception $e) {
+            Log::warning('Failed to delete story media files', [
+                'story_id' => $story->id,
+                'media_url' => $story->media_url,
+                'thumbnail_url' => $story->thumbnail_url,
+                'error' => $e->getMessage()
+            ]);
+            // Continue with story deletion even if file deletion fails
+        }
+    }
+
+    /**
+     * Extract S3 path from URL
+     *
+     * @param string $url
+     * @return string|null
+     */
+    private function extractS3PathFromUrl(string $url): ?string
+    {
+        if (empty($url)) {
+            return null;
+        }
+
+        // Parse the URL to extract the path
+        $parsedUrl = parse_url($url);
+        if (!$parsedUrl || !isset($parsedUrl['path'])) {
+            return null;
+        }
+
+        // Remove leading slash from path
+        $path = ltrim($parsedUrl['path'], '/');
+
+        // If using CloudFront or custom domain, the path might be the full S3 key
+        // If using direct S3 URLs, we might need to remove the bucket name
+        $bucketName = config('filesystems.disks.s3.bucket');
+        if ($bucketName && str_starts_with($path, $bucketName . '/')) {
+            $path = substr($path, strlen($bucketName) + 1);
+        }
+
+        return $path ?: null;
     }
 
     /**
@@ -386,7 +612,20 @@ class StoryController extends Controller
      *             @OA\Property(
      *                 property="data",
      *                 type="array",
-     *                 @OA\Items(ref="#/components/schemas/StoryResource")
+     *                 @OA\Items(
+     *                     type="object",
+     *                     @OA\Property(property="id", type="integer", example=1),
+     *                     @OA\Property(property="user_id", type="integer", example=1),
+     *                     @OA\Property(property="media_url", type="string", example="https://example.com/story.jpg"),
+     *                     @OA\Property(property="thumbnail_url", type="string", example="https://example.com/story-thumb.jpg"),
+     *                     @OA\Property(property="type", type="string", example="image"),
+     *                     @OA\Property(property="caption", type="string", example="My story caption"),
+     *                     @OA\Property(property="created_at", type="string", format="date-time"),
+     *                     @OA\Property(property="expires_at", type="string", format="date-time"),
+     *                     @OA\Property(property="status", type="string", example="active"),
+     *                     @OA\Property(property="is_expired", type="boolean", example=false),
+     *                     @OA\Property(property="user", type="object", nullable=true)
+     *                 )
      *             )
      *         )
      *     ),
