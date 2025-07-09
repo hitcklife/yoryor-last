@@ -264,7 +264,7 @@ class AuthController extends Controller
 
             // If registration is completed, include additional user data
             if ($isRegistrationCompleted) {
-                $user->load(['profile', 'photos', 'likes']);
+                $user->load(['profile', 'photos']);
             }
 
             return response()->json([

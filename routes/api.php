@@ -43,8 +43,6 @@ Route::prefix('v1')->group(function () {
     // Auth routes
     Route::prefix('auth')->group(function () {
 
-        // Home page route
-        Route::get('/home-stats', [HomeController::class, 'index']);
 
 //        Route::post('/authenticate', [AuthController::class, 'authenticate'])->middleware('rate.limit.otp');
         Route::post('/authenticate', [AuthController::class, 'authenticate']);
@@ -53,6 +51,7 @@ Route::prefix('v1')->group(function () {
         Route::middleware('auth:sanctum')->group(function () {
             Route::post('/logout', [AuthController::class, 'logout']);
             Route::post('/complete-registration', [AuthController::class, 'completeRegistration']);
+            Route::get('/home-stats', [HomeController::class, 'index']);
 
             // Two-factor authentication routes
             Route::prefix('2fa')->group(function () {
@@ -110,6 +109,10 @@ Route::prefix('v1')->group(function () {
             // Message edit and delete routes
             Route::put('/{chat_id}/messages/{message_id}', [ChatController::class, 'editMessage']);
             Route::delete('/{chat_id}/messages/{message_id}', [ChatController::class, 'deleteMessage']);
+
+            // Call-related chat routes
+            Route::get('/{id}/call-messages', [ChatController::class, 'getCallMessages']);
+            Route::get('/{id}/call-statistics', [ChatController::class, 'getCallStatistics']);
         });
 
         // Preference routes
@@ -137,7 +140,9 @@ Route::prefix('v1')->group(function () {
             Route::post('/{callId}/join', [VideoCallController::class, 'joinCall']);
             Route::post('/{callId}/end', [VideoCallController::class, 'endCall']);
             Route::post('/{callId}/reject', [VideoCallController::class, 'rejectCall']);
+            Route::post('/{callId}/missed', [VideoCallController::class, 'handleMissedCall']);
             Route::get('/history', [VideoCallController::class, 'getCallHistory']);
+            Route::get('/analytics', [VideoCallController::class, 'getCallAnalytics']);
         });
 
         // Story routes
@@ -150,5 +155,28 @@ Route::prefix('v1')->group(function () {
 
         // Device token routes for push notifications
         Route::post('/device-tokens', [DeviceTokenController::class, 'store']);
+        Route::delete('/device-tokens', [DeviceTokenController::class, 'destroy']);
+
+        Route::prefix('location')->group(function () {
+            Route::post('/update', [\App\Http\Controllers\Api\V1\LocationController::class, 'updateLocation']);
+        });
+
+        // Presence routes for online status tracking
+        Route::prefix('presence')->group(function () {
+            Route::get('/status', [\App\Http\Controllers\Api\V1\PresenceController::class, 'getOnlineStatus']);
+            Route::post('/status', [\App\Http\Controllers\Api\V1\PresenceController::class, 'updateOnlineStatus']);
+            Route::get('/online-users', [\App\Http\Controllers\Api\V1\PresenceController::class, 'getOnlineUsers']);
+            Route::get('/online-matches', [\App\Http\Controllers\Api\V1\PresenceController::class, 'getOnlineMatches']);
+            Route::get('/chats/{chatId}/online-users', [\App\Http\Controllers\Api\V1\PresenceController::class, 'getOnlineUsersInChat']);
+            Route::post('/typing', [\App\Http\Controllers\Api\V1\PresenceController::class, 'updateTypingStatus']);
+            Route::get('/chats/{chatId}/typing-users', [\App\Http\Controllers\Api\V1\PresenceController::class, 'getTypingUsers']);
+            Route::get('/statistics', [\App\Http\Controllers\Api\V1\PresenceController::class, 'getPresenceStatistics']);
+            Route::get('/history', [\App\Http\Controllers\Api\V1\PresenceController::class, 'getPresenceHistory']);
+            Route::post('/heartbeat', [\App\Http\Controllers\Api\V1\PresenceController::class, 'heartbeat']);
+
+            // Admin-only routes
+            Route::post('/sync', [\App\Http\Controllers\Api\V1\PresenceController::class, 'syncOnlineStatus']);
+            Route::post('/cleanup', [\App\Http\Controllers\Api\V1\PresenceController::class, 'cleanupExpiredPresence']);
+        });
     });
 });

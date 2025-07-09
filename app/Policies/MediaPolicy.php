@@ -34,7 +34,7 @@ class MediaPolicy
         // Users can only view media in chats they are a part of
         $message = $media->message;
         $chat = $message->chat;
-        return $chat->user_id_1 === $user->id || $chat->user_id_2 === $user->id || $user->hasPermission('media.view');
+        return $chat->users()->where('user_id', $user->id)->exists() || $user->hasPermission('media.view');
     }
 
     /**

@@ -90,4 +90,50 @@ class DeviceTokenController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Delete a device token.
+     *
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function destroy(Request $request): JsonResponse
+    {
+        try {
+            // Validate the request
+            $validated = $request->validate([
+                'token' => 'required|string',
+            ]);
+
+            $user = Auth::user();
+            $token = $validated['token'];
+
+            // Find and delete the token
+            $deleted = $user->deviceTokens()
+                ->where('token', $token)
+                ->delete();
+
+            if ($deleted) {
+                return response()->json([
+                    'status' => 'success',
+                    'message' => 'Device token deleted successfully'
+                ]);
+            }
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Device token not found'
+            ], 404);
+        } catch (\Exception $e) {
+            Log::error('Failed to delete device token: ' . $e->getMessage(), [
+                'user_id' => Auth::id(),
+                'request' => $request->all()
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to delete device token: ' . $e->getMessage()
+            ], 500);
+        }
+    }
 }

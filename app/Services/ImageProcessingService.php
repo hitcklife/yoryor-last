@@ -12,12 +12,12 @@ class ImageProcessingService
     // Image dimensions
     const THUMBNAIL_SIZE = 150;
     const MEDIUM_SIZE = 500;
-    const ORIGINAL_MAX_SIZE = 1920;
+    const LARGE_SIZE = 1200;
     
     // Image quality settings
     const THUMBNAIL_QUALITY = 85;
     const MEDIUM_QUALITY = 90;
-    const ORIGINAL_QUALITY = 95;
+    const LARGE_QUALITY = 95;
     
     protected $mediaUploadService;
     
@@ -27,7 +27,8 @@ class ImageProcessingService
     }
     
     /**
-     * Process uploaded image and create multiple sizes
+     * Process uploaded image and create multiple sizes (thumbnail, medium, and large)
+     * Note: The "original" URL now contains a large size (1200px) instead of the full original
      *
      * @param UploadedFile $file
      * @param int $userId

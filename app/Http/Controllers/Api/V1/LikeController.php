@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Events\NewLikeEvent;
+use App\Events\NewMatchEvent;
 use App\Http\Controllers\Controller;
 use App\Models\Like;
 use App\Models\Dislike;
@@ -136,6 +138,12 @@ class LikeController extends Controller
                 'liked_at' => now()
             ]);
 
+            // Get the liked user for broadcasting
+            $likedUser = User::find($likedUserId);
+
+            // Broadcast the new like event
+            broadcast(new NewLikeEvent($like, $user, $likedUser))->toOthers();
+
             // Check if there's a mutual like (the other user has already liked this user)
             $mutualLike = Like::where('user_id', $likedUserId)
                 ->where('liked_user_id', $user->id)
@@ -164,13 +172,15 @@ class LikeController extends Controller
                         'matched_at' => now()
                     ]);
 
+                    // Broadcast the new match event
+                    broadcast(new NewMatchEvent($match, $user, $likedUser))->toOthers();
+
                 } else {
                     $match = $existingMatch;
                 }
                 $isMatch = true;
 
                 // Check if a chat already exists between these users
-                $likedUser = User::find($likedUserId);
                 $existingChat = $user->getChatWith($likedUser);
 
                 if ($existingChat === null) {
@@ -470,7 +480,6 @@ class LikeController extends Controller
     {
         // Check if the user is authorized to view likes
 //        $this->authorize('viewAny', Like::class);
-
         try {
             $user = $request->user();
             $perPage = $request->input('per_page', 10);

@@ -23,12 +23,12 @@ class MediaUploadService
     // Image processing constants - updated sizes
     const THUMBNAIL_SIZE = 50;
     const MEDIUM_SIZE = 300;
-    const ORIGINAL_MAX_SIZE = 1920;
+    const LARGE_SIZE = 1200;
     
     // Quality settings
     const THUMBNAIL_QUALITY = 85;
     const MEDIUM_QUALITY = 90;
-    const ORIGINAL_QUALITY = 95;
+    const LARGE_QUALITY = 95;
     
     // File size limits (in bytes)
     const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
@@ -47,9 +47,56 @@ class MediaUploadService
     {
         // Initialize FFMpeg
         try {
+            // Try to find FFmpeg binaries automatically
+            $ffmpegPath = env('FFMPEG_BINARY');
+            $ffprobePath = env('FFPROBE_BINARY');
+            
+            if (!$ffmpegPath) {
+                // Try common paths
+                $possiblePaths = [
+                    '/opt/homebrew/bin/ffmpeg',  // macOS with Homebrew
+                    '/usr/bin/ffmpeg',           // Linux
+                    '/usr/local/bin/ffmpeg',     // macOS with Homebrew (older)
+                    'ffmpeg'                     // System PATH
+                ];
+                
+                foreach ($possiblePaths as $path) {
+                    if (file_exists($path) || shell_exec("which $path 2>/dev/null")) {
+                        $ffmpegPath = $path;
+                        break;
+                    }
+                }
+            }
+            
+            if (!$ffprobePath) {
+                // Try common paths for ffprobe
+                $possiblePaths = [
+                    '/opt/homebrew/bin/ffprobe',  // macOS with Homebrew
+                    '/usr/bin/ffprobe',           // Linux
+                    '/usr/local/bin/ffprobe',     // macOS with Homebrew (older)
+                    'ffprobe'                     // System PATH
+                ];
+                
+                foreach ($possiblePaths as $path) {
+                    if (file_exists($path) || shell_exec("which $path 2>/dev/null")) {
+                        $ffprobePath = $path;
+                        break;
+                    }
+                }
+            }
+            
+            if (!$ffmpegPath || !$ffprobePath) {
+                throw new Exception('FFmpeg or FFprobe not found. Please install FFmpeg.');
+            }
+            
+            Log::info('FFmpeg configuration', [
+                'ffmpeg_path' => $ffmpegPath,
+                'ffprobe_path' => $ffprobePath
+            ]);
+            
             $this->ffmpeg = FFMpeg::create([
-                'ffmpeg.binaries'  => env('FFMPEG_BINARY', '/usr/bin/ffmpeg'),
-                'ffprobe.binaries' => env('FFPROBE_BINARY', '/usr/bin/ffprobe'),
+                'ffmpeg.binaries'  => $ffmpegPath,
+                'ffprobe.binaries' => $ffprobePath,
                 'timeout'          => 3600, // The timeout for the underlying process
                 'ffmpeg.threads'   => 12,   // The number of threads that FFMpeg should use
             ]);
@@ -127,16 +174,16 @@ class MediaUploadService
         $originalWidth = $image->width();
         $originalHeight = $image->height();
         
-        // Resize original if too large
-        if ($originalWidth > self::ORIGINAL_MAX_SIZE || $originalHeight > self::ORIGINAL_MAX_SIZE) {
-            $image->resize(self::ORIGINAL_MAX_SIZE, self::ORIGINAL_MAX_SIZE, function ($constraint) {
+        // Resize to large size if too large (1200px max)
+        if ($originalWidth > self::LARGE_SIZE || $originalHeight > self::LARGE_SIZE) {
+            $image->resize(self::LARGE_SIZE, self::LARGE_SIZE, function ($constraint) {
                 $constraint->aspectRatio();
                 $constraint->upsize();
             });
         }
         
-        // Convert to WebP and upload original to S3
-        $originalWebP = $image->encode('webp', self::ORIGINAL_QUALITY);
+        // Convert to WebP and upload large size to S3 (stored as original_url for DB compatibility)
+        $originalWebP = $image->encode('webp', self::LARGE_QUALITY);
         $originalUrl = $this->uploadToS3($originalWebP, $s3Path);
         
         // Generate and upload thumbnail (50x50)
@@ -281,10 +328,32 @@ class MediaUploadService
         $shouldConvert = $isVoiceMessage || 
                         in_array($file->getMimeType(), ['audio/m4a', 'audio/x-m4a', 'audio/mp4']);
         
+        // Log the processing decision
+        Log::info('Audio processing decision', [
+            'file_name' => $file->getClientOriginalName(),
+            'mime_type' => $file->getMimeType(),
+            'is_voice_message' => $isVoiceMessage,
+            'should_convert' => $shouldConvert,
+            'ffmpeg_available' => $this->ffmpeg !== null,
+            'media_type' => $mediaType,
+            'options' => $options
+        ]);
+        
         if ($shouldConvert && $this->ffmpeg) {
+            Log::info('Converting audio to OGG', [
+                'file_name' => $file->getClientOriginalName(),
+                'user_id' => $userId,
+                'context' => $context
+            ]);
             return $this->convertAudioToOgg($file, $context, $userId, $options, $mediaType);
         } else {
             // For regular audio files, upload as-is
+            Log::info('Uploading audio directly', [
+                'file_name' => $file->getClientOriginalName(),
+                'user_id' => $userId,
+                'context' => $context,
+                'reason' => $shouldConvert ? 'FFmpeg not available' : 'Not a voice message'
+            ]);
             return $this->uploadAudioDirect($file, $context, $userId, $options, $mediaType);
         }
     }
@@ -305,10 +374,22 @@ class MediaUploadService
         $tempInputPath = $this->createTempFile($file, 'audio_input_');
         $tempOutputPath = tempnam(sys_get_temp_dir(), 'audio_output_') . '.ogg';
         
+        Log::info('Starting audio conversion to OGG', [
+            'input_path' => $tempInputPath,
+            'output_path' => $tempOutputPath,
+            'file_name' => $file->getClientOriginalName(),
+            'user_id' => $userId
+        ]);
+        
         try {
             // Generate unique filename with ogg extension
             $filename = $this->generateFilename($file, $context, $userId, 'ogg');
             $s3Path = $this->buildS3Path($context, $userId, $filename);
+            
+            Log::info('Generated filename and S3 path', [
+                'filename' => $filename,
+                's3_path' => $s3Path
+            ]);
             
             // Open audio with FFMpeg
             $audio = $this->ffmpeg->open($tempInputPath);
@@ -320,6 +401,10 @@ class MediaUploadService
             // Convert to OGG
             $audio->save($format, $tempOutputPath);
             
+            Log::info('Audio conversion completed', [
+                'output_file_size' => file_exists($tempOutputPath) ? filesize($tempOutputPath) : 0
+            ]);
+            
             // Upload converted audio to S3
             $audioContent = file_get_contents($tempOutputPath);
             $audioUrl = $this->uploadToS3($audioContent, $s3Path);
@@ -327,6 +412,12 @@ class MediaUploadService
             // Get audio duration
             $probe = $this->ffmpeg->getFFProbe();
             $duration = $probe->format($tempInputPath)->get('duration');
+            
+            Log::info('Audio upload completed', [
+                'audio_url' => $audioUrl,
+                'duration' => $duration,
+                's3_path' => $s3Path
+            ]);
             
             return [
                 'original_url' => $audioUrl,
@@ -345,6 +436,13 @@ class MediaUploadService
                 ]
             ];
             
+        } catch (Exception $e) {
+            Log::error('Audio conversion failed', [
+                'error' => $e->getMessage(),
+                'file_name' => $file->getClientOriginalName(),
+                'user_id' => $userId
+            ]);
+            throw $e;
         } finally {
             // Clean up temporary files
             if (file_exists($tempInputPath)) {
@@ -590,6 +688,11 @@ class MediaUploadService
         $timestamp = time();
         $uniqueId = uniqid();
         
+        // For voice messages, use a shorter, more readable format
+        if ($context === 'chat' && ($forceExtension === 'ogg' || $file->getMimeType() === 'audio/m4a')) {
+            return "voice_{$userId}_{$timestamp}.{$extension}";
+        }
+        
         return "{$context}_{$userId}_{$timestamp}_{$uniqueId}.{$extension}";
     }
     
@@ -603,6 +706,11 @@ class MediaUploadService
      */
     private function buildS3Path(string $context, int $userId, string $filename): string
     {
+        // For voice messages, use a simpler path structure
+        if ($context === 'chat' && strpos($filename, 'voice_') === 0) {
+            return "media/voice/{$userId}/{$filename}";
+        }
+        
         return "media/{$context}/{$userId}/{$filename}";
     }
     

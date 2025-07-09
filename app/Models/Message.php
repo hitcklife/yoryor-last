@@ -16,7 +16,7 @@ class Message extends Model
     protected $fillable = [
         'chat_id', 'sender_id', 'reply_to_message_id', 'content',
         'message_type', 'media_data', 'media_url', 'thumbnail_url',
-        'status', 'is_edited', 'edited_at', 'sent_at'
+        'status', 'is_edited', 'edited_at', 'sent_at', 'call_id'
     ];
 
     protected $casts = [
@@ -54,6 +54,103 @@ class Message extends Model
     public function messageReads(): HasMany
     {
         return $this->hasMany(MessageRead::class);
+    }
+
+    /**
+     * Get the call associated with this message (if it's a call message).
+     */
+    public function call(): BelongsTo
+    {
+        return $this->belongsTo(Call::class);
+    }
+
+    /**
+     * Check if this message is a call message
+     */
+    public function isCallMessage(): bool
+    {
+        return $this->message_type === 'call';
+    }
+
+    /**
+     * Get call data from media_data if it's a call message
+     */
+    public function getCallData(): ?array
+    {
+        if (!$this->isCallMessage()) {
+            return null;
+        }
+
+        return $this->media_data;
+    }
+
+    /**
+     * Get call duration from media_data
+     */
+    public function getCallDuration(): ?int
+    {
+        $callData = $this->getCallData();
+        return $callData['duration'] ?? null;
+    }
+
+    /**
+     * Get formatted call duration
+     */
+    public function getFormattedCallDuration(): ?string
+    {
+        $duration = $this->getCallDuration();
+        
+        if ($duration === null) {
+            return null;
+        }
+
+        return $this->formatDuration($duration);
+    }
+
+    /**
+     * Format duration in human-readable format
+     */
+    private function formatDuration(int $seconds): string
+    {
+        if ($seconds < 60) {
+            return $seconds . 's';
+        }
+        
+        $minutes = floor($seconds / 60);
+        $remainingSeconds = $seconds % 60;
+        
+        if ($minutes < 60) {
+            return $remainingSeconds > 0 ? "{$minutes}m {$remainingSeconds}s" : "{$minutes}m";
+        }
+        
+        $hours = floor($minutes / 60);
+        $remainingMinutes = $minutes % 60;
+        
+        $formatted = "{$hours}h";
+        if ($remainingMinutes > 0) {
+            $formatted .= " {$remainingMinutes}m";
+        }
+        if ($remainingSeconds > 0) {
+            $formatted .= " {$remainingSeconds}s";
+        }
+        
+        return $formatted;
+    }
+
+    /**
+     * Scope to get call messages only
+     */
+    public function scopeCallMessages(Builder $query): Builder
+    {
+        return $query->where('message_type', 'call');
+    }
+
+    /**
+     * Scope to get call messages for a specific call
+     */
+    public function scopeForCall(Builder $query, Call $call): Builder
+    {
+        return $query->where('call_id', $call->id);
     }
 
     /**
@@ -113,10 +210,11 @@ class Message extends Model
      */
     public function getReadStatusFor(User $user): array
     {
-        $isRead = $this->isReadBy($user);
+        $isMine = $this->sender_id === $user->id;
+        $isRead = $isMine ? false : $this->isReadBy($user);
         $readAt = null;
         
-        if ($isRead && $this->sender_id !== $user->id) {
+        if ($isRead && !$isMine) {
             $readRecord = $this->messageReads()->where('user_id', $user->id)->first();
             $readAt = $readRecord?->read_at;
         }
@@ -124,7 +222,7 @@ class Message extends Model
         return [
             'is_read' => $isRead,
             'read_at' => $readAt,
-            'is_mine' => $this->sender_id === $user->id
+            'is_mine' => $isMine
         ];
     }
 

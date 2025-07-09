@@ -58,11 +58,11 @@ class CallStatusChangedEvent implements ShouldBroadcast
         $channels = [];
 
         if ($this->changedBy !== $this->call->caller_id) {
-            $channels[] = new PrivateChannel('private-user.' . $this->call->caller_id);
+            $channels[] = new PrivateChannel('user.' . $this->call->caller_id);
         }
 
         if ($this->changedBy !== $this->call->receiver_id) {
-            $channels[] = new PrivateChannel('private-user.' . $this->call->receiver_id);
+            $channels[] = new PrivateChannel('user.' . $this->call->receiver_id);
         }
 
         return $channels;

@@ -33,7 +33,7 @@ class MessagePolicy
     {
         // Users can only view messages in chats they are a part of
         $chat = $message->chat;
-        return $chat->user_id_1 === $user->id || $chat->user_id_2 === $user->id || $user->hasPermission('message.view');
+        return $chat->users()->where('user_id', $user->id)->exists() || $user->hasPermission('message.view');
     }
 
     /**

@@ -202,6 +202,82 @@ class User extends Authenticatable
         return $this->last_active_at && $this->last_active_at->greaterThan(now()->subMinutes(5));
     }
 
+    // PRESENCE METHODS
+    
+    /**
+     * Check if user is online using presence service
+     */
+    public function isOnlineViaPresence(): bool
+    {
+        return app(\App\Services\PresenceService::class)->isUserOnline($this->id);
+    }
+
+    /**
+     * Mark user as online in presence system
+     */
+    public function goOnline(): void
+    {
+        app(\App\Services\PresenceService::class)->markUserOnline($this);
+    }
+
+    /**
+     * Mark user as offline in presence system
+     */
+    public function goOffline(): void
+    {
+        app(\App\Services\PresenceService::class)->markUserOffline($this);
+    }
+
+    /**
+     * Get user's presence data
+     */
+    public function getPresenceData(): ?array
+    {
+        return app(\App\Services\PresenceService::class)->getPresenceData($this->id);
+    }
+
+    /**
+     * Get user's online matches
+     */
+    public function getOnlineMatches(): \Illuminate\Support\Collection
+    {
+        return app(\App\Services\PresenceService::class)->getOnlineMatches($this);
+    }
+
+    /**
+     * Update typing status in a chat
+     */
+    public function updateTypingStatus(int $chatId, bool $isTyping): void
+    {
+        app(\App\Services\PresenceService::class)->updateTypingStatus($this, $chatId, $isTyping);
+    }
+
+    /**
+     * Check if user is currently active (based on last activity)
+     */
+    public function isActiveInLast(int $minutes = 15): bool
+    {
+        return $this->last_active_at && $this->last_active_at->greaterThan(now()->subMinutes($minutes));
+    }
+
+    /**
+     * Get online status with details
+     */
+    public function getOnlineStatus(): array
+    {
+        $isOnline = $this->isOnline();
+        $isOnlineViaPresence = $this->isOnlineViaPresence();
+        
+        return [
+            'is_online' => $isOnline || $isOnlineViaPresence,
+            'is_online_database' => $isOnline,
+            'is_online_presence' => $isOnlineViaPresence,
+            'last_active_at' => $this->last_active_at?->toISOString(),
+            'status' => $isOnline || $isOnlineViaPresence ? 'online' : 'offline',
+            'last_seen' => $this->last_active_at?->diffForHumans(),
+        ];
+    }
+
     public function getAgeAttribute(): ?int
     {
         return $this->profile?->date_of_birth?->age;

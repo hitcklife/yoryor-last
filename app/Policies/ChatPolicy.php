@@ -32,7 +32,7 @@ class ChatPolicy
     public function view(User $user, Chat $chat): bool
     {
         // Users can only view chats they are a part of
-        return $chat->user_id_1 === $user->id || $chat->user_id_2 === $user->id || $user->hasPermission('chat.view');
+        return $chat->users()->where('user_id', $user->id)->exists() || $user->hasPermission('chat.view');
     }
 
     /**
@@ -57,7 +57,7 @@ class ChatPolicy
     public function update(User $user, Chat $chat): bool
     {
         // Users can only update chats they are a part of
-        return $chat->user_id_1 === $user->id || $chat->user_id_2 === $user->id || $user->hasPermission('chat.update');
+        return $chat->users()->where('user_id', $user->id)->exists() || $user->hasPermission('chat.update');
     }
 
     /**
@@ -70,7 +70,7 @@ class ChatPolicy
     public function delete(User $user, Chat $chat): bool
     {
         // Users can only delete chats they are a part of
-        return $chat->user_id_1 === $user->id || $chat->user_id_2 === $user->id || $user->hasPermission('chat.delete');
+        return $chat->users()->where('user_id', $user->id)->exists() || $user->hasPermission('chat.delete');
     }
 
     /**

@@ -45,7 +45,7 @@ class CallInitiatedEvent implements ShouldBroadcast
      */
     public function broadcastOn()
     {
-        return new PrivateChannel('private-user.' . $this->call->receiver_id);
+        return new PrivateChannel('user.' . $this->call->receiver_id);
     }
 
     /**
