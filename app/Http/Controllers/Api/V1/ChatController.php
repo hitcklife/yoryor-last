@@ -284,11 +284,13 @@ class ChatController extends Controller
             // Build messages query with optimized loading
             $messagesQuery = $chat->messages()
                 ->with([
-                    'sender:id,email,profile_photo_path',
+                    'sender:id,email',
                     'sender.profile:id,user_id,first_name,last_name',
+                    'sender.profilePhoto:id,user_id,original_url,thumbnail_url,medium_url,is_profile_photo',
                     'replyTo:id,content,sender_id',
-                    'replyTo.sender:id,email,profile_photo_path',
-                    'replyTo.sender.profile:id,user_id,first_name,last_name'
+                    'replyTo.sender:id,email',
+                    'replyTo.sender.profile:id,user_id,first_name,last_name',
+                    'replyTo.sender.profilePhoto:id,user_id,original_url,thumbnail_url,medium_url,is_profile_photo'
                 ])
                 ->orderBy('sent_at', 'desc');
 
@@ -1492,8 +1494,9 @@ class ChatController extends Controller
             $callMessagesQuery = $chat->messages()
                 ->callMessages()
                 ->with([
-                    'sender:id,email,profile_photo_path',
+                    'sender:id,email',
                     'sender.profile:id,user_id,first_name,last_name',
+                    'sender.profilePhoto:id,user_id,original_url,thumbnail_url,medium_url,is_profile_photo',
                     'call:id,type,status,started_at,ended_at,caller_id,receiver_id'
                 ])
                 ->orderBy('sent_at', 'desc');

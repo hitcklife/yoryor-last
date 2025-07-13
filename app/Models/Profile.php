@@ -17,6 +17,7 @@ class Profile extends Model
         'gender',
         'date_of_birth',
         'age',
+        'status',
         'city',
         'state',
         'province',
@@ -42,6 +43,7 @@ class Profile extends Model
         'latitude' => 'decimal:7',
         'longitude' => 'decimal:7',
         'age' => 'integer',
+        'status' => 'boolean',
         'profile_views' => 'integer',
         'profile_completed_at' => 'datetime',
         'looking_for' => 'string'

@@ -388,7 +388,14 @@ class AgoraController extends Controller
             $query->where('type', $request->type);
         }
 
-        $calls = $query->with(['caller:id,name,profile_photo_path', 'receiver:id,name,profile_photo_path'])
+        $calls = $query->with([
+                'caller:id,name',
+                'caller.profile:id,user_id,first_name,last_name',
+                'caller.profilePhoto:id,user_id,original_url,thumbnail_url,medium_url,is_profile_photo',
+                'receiver:id,name',
+                'receiver.profile:id,user_id,first_name,last_name',
+                'receiver.profilePhoto:id,user_id,original_url,thumbnail_url,medium_url,is_profile_photo'
+            ])
             ->orderBy('created_at', 'desc')
             ->paginate($request->get('per_page', 15));
 

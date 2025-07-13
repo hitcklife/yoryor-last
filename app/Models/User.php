@@ -19,7 +19,7 @@ class User extends Authenticatable
 
     protected $fillable = [
         'email', 'phone', 'google_id', 'facebook_id', 'password',
-        'profile_photo_path', 'registration_completed', 'last_active_at', 'last_login_at',
+        'registration_completed', 'last_active_at', 'last_login_at',
         'two_factor_enabled', 'two_factor_secret', 'two_factor_recovery_codes'
     ];
 
@@ -92,6 +92,78 @@ class User extends Authenticatable
     public function preference(): HasOne
     {
         return $this->hasOne(UserPreference::class);
+    }
+
+    /**
+     * Get the cultural profile for the user.
+     */
+    public function culturalProfile(): HasOne
+    {
+        return $this->hasOne(UserCulturalProfile::class);
+    }
+
+    /**
+     * Get the family preferences for the user.
+     */
+    public function familyPreference(): HasOne
+    {
+        return $this->hasOne(UserFamilyPreference::class);
+    }
+
+    /**
+     * Get the location preferences for the user.
+     */
+    public function locationPreference(): HasOne
+    {
+        return $this->hasOne(UserLocationPreference::class);
+    }
+
+    /**
+     * Get the career profile for the user.
+     */
+    public function careerProfile(): HasOne
+    {
+        return $this->hasOne(UserCareerProfile::class);
+    }
+
+    /**
+     * Get the physical profile for the user.
+     */
+    public function physicalProfile(): HasOne
+    {
+        return $this->hasOne(UserPhysicalProfile::class);
+    }
+
+    /**
+     * Get the settings for the user.
+     */
+    public function settings(): HasOne
+    {
+        return $this->hasOne(UserSetting::class);
+    }
+
+    /**
+     * Get the emergency contacts for the user.
+     */
+    public function emergencyContacts(): HasMany
+    {
+        return $this->hasMany(EmergencyContact::class);
+    }
+
+    /**
+     * Get the data export requests for the user.
+     */
+    public function dataExportRequests(): HasMany
+    {
+        return $this->hasMany(DataExportRequest::class);
+    }
+
+    /**
+     * Get the feedback submitted by the user.
+     */
+    public function feedback(): HasMany
+    {
+        return $this->hasMany(UserFeedback::class);
     }
 
     // CHAT RELATIONSHIPS - Updated based on your structure
@@ -189,6 +261,15 @@ class User extends Authenticatable
         return $this->hasMany(DeviceToken::class);
     }
 
+    /**
+     * Route notifications for the expo channel.
+     * This method is used by the laravel-expo-notifier package.
+     */
+    public function routeNotificationForExpo(): array
+    {
+        return $this->deviceTokens->pluck('token')->toArray();
+    }
+
     // HELPER METHODS
     public function updateLastActive(): void
     {
@@ -203,7 +284,7 @@ class User extends Authenticatable
     }
 
     // PRESENCE METHODS
-    
+
     /**
      * Check if user is online using presence service
      */
@@ -267,7 +348,7 @@ class User extends Authenticatable
     {
         $isOnline = $this->isOnline();
         $isOnlineViaPresence = $this->isOnlineViaPresence();
-        
+
         return [
             'is_online' => $isOnline || $isOnlineViaPresence,
             'is_online_database' => $isOnline,
@@ -285,7 +366,29 @@ class User extends Authenticatable
 
     public function getFullNameAttribute(): string
     {
-        return trim($this->profile?->first_name . ' ' . $this->profile?->last_name) ?: 'Anonymous';
+        // Use cached value if available to avoid repeated calculations
+        if (isset($this->attributes['full_name'])) {
+            return $this->attributes['full_name'];
+        }
+
+        $firstName = $this->profile?->first_name;
+        $lastName = $this->profile?->last_name;
+
+        // Handle different combinations of first_name and last_name
+        if ($firstName && $lastName) {
+            $fullName = $firstName . ' ' . $lastName;
+        } elseif ($firstName) {
+            $fullName = $firstName;
+        } elseif ($lastName) {
+            $fullName = $lastName;
+        } else {
+            $fullName = 'Anonymous';
+        }
+
+        // Cache the result
+        $this->attributes['full_name'] = $fullName;
+
+        return $fullName;
     }
 
     public function initials(): string
@@ -334,6 +437,69 @@ class User extends Authenticatable
     {
         return $this->matches()->where('matched_user_id', $user->id)->exists() &&
                $user->matches()->where('matched_user_id', $this->id)->exists();
+    }
+
+    public function hasBlocked(User $user): bool
+    {
+        return $this->blockedUsers()->where('blocked_id', $user->id)->exists();
+    }
+
+    public function isBlockedBy(User $user): bool
+    {
+        return $user->blockedUsers()->where('blocked_id', $this->id)->exists();
+    }
+
+    public function hasReported(User $user): bool
+    {
+        return $this->reportsMade()->where('reported_id', $user->id)->exists();
+    }
+
+    public function canViewProfile(User $user): bool
+    {
+        // Users can't view profiles of those who blocked them or whom they blocked
+        return !$this->hasBlocked($user) && !$this->isBlockedBy($user);
+    }
+
+    // PROFILE PHOTO HELPER METHODS
+    public function getProfilePhotoUrl(string $size = 'medium'): ?string
+    {
+        $profilePhoto = $this->profilePhoto;
+
+        if (!$profilePhoto) {
+            return null;
+        }
+
+        return match($size) {
+            'thumbnail' => $profilePhoto->thumbnail_url,
+            'original' => $profilePhoto->original_url,
+            default => $profilePhoto->medium_url,
+        };
+    }
+
+    public function getProfilePhotoUrlAttribute(): ?string
+    {
+        return $this->getProfilePhotoUrl();
+    }
+
+    // BLOCKING AND REPORTING RELATIONSHIPS
+    public function blockedUsers(): HasMany
+    {
+        return $this->hasMany(UserBlock::class, 'blocker_id');
+    }
+
+    public function blockedBy(): HasMany
+    {
+        return $this->hasMany(UserBlock::class, 'blocked_id');
+    }
+
+    public function reportsMade(): HasMany
+    {
+        return $this->hasMany(UserReport::class, 'reporter_id');
+    }
+
+    public function reportsReceived(): HasMany
+    {
+        return $this->hasMany(UserReport::class, 'reported_id');
     }
 
     // ROLE AND PERMISSION METHODS

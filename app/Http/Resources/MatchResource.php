@@ -103,7 +103,7 @@ class MatchResource extends JsonResource
             'attributes' => [
                 'email' => $user->email,
                 'phone' => $user->phone,
-                'profile_photo_path' => $user->profile_photo_path,
+                'profile_photo_url' => $user->getProfilePhotoUrl(),
                 'registration_completed' => $user->registration_completed,
                 'is_private' => $user->is_private,
                 'created_at' => $user->created_at,

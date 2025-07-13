@@ -71,7 +71,7 @@ class PresenceController extends Controller
                         'id' => $user->id,
                         'name' => $user->full_name,
                         'email' => $user->email,
-                        'avatar' => $user->profile_photo_path,
+                        'avatar' => $user->getProfilePhotoUrl(),
                         'last_active_at' => $user->last_active_at?->toISOString(),
                         'presence_data' => $user->getPresenceData(),
                     ];
@@ -87,10 +87,10 @@ class PresenceController extends Controller
     public function getOnlineUsersInChat(Request $request, int $chatId): JsonResponse
     {
         $user = $request->user();
-        
+
         // Check if user is part of the chat
         $chat = $user->chats()->findOrFail($chatId);
-        
+
         $onlineUsers = $this->presenceService->getOnlineUsersInChat($chatId);
 
         return response()->json([
@@ -102,7 +102,7 @@ class PresenceController extends Controller
                         'id' => $user->id,
                         'name' => $user->full_name,
                         'email' => $user->email,
-                        'avatar' => $user->profile_photo_path,
+                        'avatar' => $user->getProfilePhotoUrl(),
                         'last_active_at' => $user->last_active_at?->toISOString(),
                         'presence_data' => $user->getPresenceData(),
                     ];
@@ -128,7 +128,7 @@ class PresenceController extends Controller
                         'id' => $match->id,
                         'name' => $match->full_name,
                         'age' => $match->age,
-                        'avatar' => $match->profile_photo_path,
+                        'avatar' => $match->getProfilePhotoUrl(),
                         'last_active_at' => $match->last_active_at?->toISOString(),
                         'presence_data' => $match->getPresenceData(),
                     ];
@@ -174,10 +174,10 @@ class PresenceController extends Controller
     public function getTypingUsers(Request $request, int $chatId): JsonResponse
     {
         $user = $request->user();
-        
+
         // Check if user is part of the chat
         $chat = $user->chats()->findOrFail($chatId);
-        
+
         $typingUserIds = $this->presenceService->getTypingUsersInChat($chatId);
         $typingUsers = collect();
 
@@ -195,7 +195,7 @@ class PresenceController extends Controller
                     return [
                         'id' => $user->id,
                         'name' => $user->full_name,
-                        'avatar' => $user->profile_photo_path,
+                        'avatar' => $user->getProfilePhotoUrl(),
                     ];
                 }),
                 'total_typing' => $typingUsers->count(),
@@ -247,7 +247,7 @@ class PresenceController extends Controller
     public function syncOnlineStatus(Request $request): JsonResponse
     {
         $user = $request->user();
-        
+
         // Check if user is admin
         if (!$user->is_admin) {
             return response()->json([
@@ -270,7 +270,7 @@ class PresenceController extends Controller
     public function cleanupExpiredPresence(Request $request): JsonResponse
     {
         $user = $request->user();
-        
+
         // Check if user is admin
         if (!$user->is_admin) {
             return response()->json([
@@ -304,4 +304,4 @@ class PresenceController extends Controller
             ]
         ]);
     }
-} 
+}

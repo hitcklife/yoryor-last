@@ -33,7 +33,7 @@
  *     type="object",
  *     @OA\Property(property="email", type="string", example="user@example.com"),
  *     @OA\Property(property="phone", type="string", example="+1234567890"),
- *     @OA\Property(property="profile_photo_path", type="string", example="/storage/photos/1.jpg"),
+ *     @OA\Property(property="profile_photo_url", type="string", example="https://example.com/photos/1.jpg"),
  *     @OA\Property(property="registration_completed", type="boolean", example=true),
  *     @OA\Property(property="is_private", type="boolean", example=false),
  *     @OA\Property(property="created_at", type="string", format="date-time"),

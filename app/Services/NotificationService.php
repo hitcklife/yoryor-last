@@ -255,4 +255,134 @@ class NotificationService
             $this->sendBulkNotification($userIds, $type, $title, $message, $data, $sendPushNotification);
         });
     }
+
+    /**
+     * Send a like notification to a user.
+     *
+     * @param User $likedUser
+     * @param User $liker
+     * @return void
+     */
+    public function sendLikeNotification(User $likedUser, User $liker): void
+    {
+        $this->sendNotification(
+            $likedUser,
+            'new_like',
+            'You got a new like! 💕',
+            "{$liker->full_name} liked your profile!",
+            [
+                'liker_id' => $liker->id,
+                'liker_name' => $liker->full_name,
+                'liker_photo' => $liker->getProfilePhotoUrl('thumbnail'),
+                'action' => 'view_likes'
+            ]
+        );
+    }
+
+    /**
+     * Send a match notification to users.
+     *
+     * @param User $user1
+     * @param User $user2
+     * @return void
+     */
+    public function sendMatchNotification(User $user1, User $user2): void
+    {
+        // Send to user1
+        $this->sendNotification(
+            $user1,
+            'new_match',
+            'It\'s a match! 🎉',
+            "You and {$user2->full_name} liked each other! Start chatting now.",
+            [
+                'matched_user_id' => $user2->id,
+                'matched_user_name' => $user2->full_name,
+                'matched_user_photo' => $user2->getProfilePhotoUrl('thumbnail'),
+                'action' => 'view_matches'
+            ]
+        );
+
+        // Send to user2
+        $this->sendNotification(
+            $user2,
+            'new_match',
+            'It\'s a match! 🎉',
+            "You and {$user1->full_name} liked each other! Start chatting now.",
+            [
+                'matched_user_id' => $user1->id,
+                'matched_user_name' => $user1->full_name,
+                'matched_user_photo' => $user1->getProfilePhotoUrl('thumbnail'),
+                'action' => 'view_matches'
+            ]
+        );
+    }
+
+    /**
+     * Send a message notification to a user.
+     *
+     * @param User $recipient
+     * @param User $sender
+     * @param \App\Models\Message $message
+     * @return void
+     */
+    public function sendMessageNotification(User $recipient, User $sender, $message): void
+    {
+        $messagePreview = $this->getMessagePreview($message);
+
+        $this->sendNotification(
+            $recipient,
+            'new_message',
+            "New message from {$sender->full_name}",
+            $messagePreview,
+            [
+                'sender_id' => $sender->id,
+                'sender_name' => $sender->full_name,
+                'sender_photo' => $sender->getProfilePhotoUrl('thumbnail'),
+                'chat_id' => $message->chat_id,
+                'message_id' => $message->id,
+                'message_type' => $message->message_type,
+                'action' => 'view_chat'
+            ]
+        );
+    }
+
+    /**
+     * Get a preview of the message content for notification
+     *
+     * @param \App\Models\Message $message
+     * @return string
+     */
+    private function getMessagePreview($message): string
+    {
+        switch ($message->message_type) {
+            case 'text':
+                return $message->content ? (strlen($message->content) > 100 ? substr($message->content, 0, 100) . '...' : $message->content) : 'Sent a message';
+            case 'image':
+                return '📷 Sent a photo';
+            case 'video':
+                return '🎥 Sent a video';
+            case 'voice':
+                return '🎤 Sent a voice message';
+            case 'audio':
+                return '🎵 Sent an audio file';
+            case 'file':
+                return '📎 Sent a file';
+            case 'location':
+                return '📍 Sent a location';
+            case 'call':
+                $mediaData = $message->media_data ?? [];
+                $callType = $mediaData['call_type'] ?? 'call';
+                $callStatus = $mediaData['call_status'] ?? 'completed';
+                
+                if ($callStatus === 'missed') {
+                    return "📞 Missed {$callType} call";
+                } elseif ($callStatus === 'completed') {
+                    return "📞 {$callType} call ended";
+                } else {
+                    return "📞 {$callType} call";
+                }
+            default:
+                return 'Sent a message';
+        }
+    }
 }

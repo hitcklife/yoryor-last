@@ -33,7 +33,11 @@ class NewMessageEvent implements ShouldBroadcast
         $this->message = $message;
 
         // Load the sender relationship for the response
-        $this->message->load('sender:id,email,phone,google_id,facebook_id,email_verified_at,phone_verified_at,disabled_at,registration_completed,is_admin,is_private,profile_photo_path,last_active_at,deleted_at,created_at,updated_at,two_factor_enabled,last_login_at');
+        $this->message->load([
+            'sender:id,email,phone,google_id,facebook_id,email_verified_at,phone_verified_at,disabled_at,registration_completed,is_admin,is_private,last_active_at,deleted_at,created_at,updated_at,two_factor_enabled,last_login_at',
+            'sender.profile:id,user_id,first_name,last_name',
+            'sender.profilePhoto:id,user_id,original_url,thumbnail_url,medium_url,is_profile_photo'
+        ]);
     }
 
     /**

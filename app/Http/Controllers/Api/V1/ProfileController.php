@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\Profile;
 use App\Models\User;
+use App\Models\UserBlock;
+use App\Models\UserReport;
 use App\Services\ImageProcessingService;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\Request;
@@ -222,6 +224,226 @@ class ProfileController extends Controller
     }
 
     /**
+     * Get another user's profile (for matched users)
+     *
+     * @param Request $request
+     * @param int $userId
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getUserProfile(Request $request, int $userId)
+    {
+        try {
+            $currentUser = $request->user();
+            $targetUser = User::findOrFail($userId);
+
+            // Check if users can view each other's profiles
+            if (!$currentUser->canViewProfile($targetUser)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'You cannot view this profile',
+                    'error_code' => 'profile_blocked'
+                ], 403);
+            }
+
+            // Check if users are matched (optional requirement)
+            if (!$currentUser->hasMatched($targetUser)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'You can only view profiles of matched users',
+                    'error_code' => 'not_matched'
+                ], 403);
+            }
+
+            $profile = $targetUser->profile;
+            if (!$profile) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Profile not found',
+                    'error_code' => 'profile_not_found'
+                ], 404);
+            }
+
+            // Load profile with relationships
+            $profile->load([
+                'user:id,email,phone,last_active_at,registration_completed',
+                'user.photos' => function($query) {
+                    $query->approved()->public()->ordered()->select('id', 'user_id', 'original_url', 'medium_url', 'thumbnail_url', 'is_profile_photo', 'order');
+                },
+                'country:id,name,code'
+            ]);
+
+            // Increment profile views
+            $profile->increment('profile_views');
+
+            return response()->json([
+                'status' => 'success',
+                'data' => [
+                    'profile' => $this->transformProfile($profile, false),
+                    'is_matched' => $currentUser->hasMatched($targetUser),
+                    'is_blocked' => $currentUser->hasBlocked($targetUser),
+                    'has_reported' => $currentUser->hasReported($targetUser),
+                ]
+            ]);
+
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'User not found',
+                'error_code' => 'user_not_found'
+            ], 404);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to retrieve profile',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Block a user profile
+     *
+     * @param Request $request
+     * @param int $userId
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function blockUser(Request $request, int $userId)
+    {
+        try {
+            $currentUser = $request->user();
+            $targetUser = User::findOrFail($userId);
+
+            if ($currentUser->id === $targetUser->id) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'You cannot block yourself',
+                    'error_code' => 'cannot_block_self'
+                ], 400);
+            }
+
+            if ($currentUser->hasBlocked($targetUser)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'User is already blocked',
+                    'error_code' => 'already_blocked'
+                ], 400);
+            }
+
+            $validated = $request->validate([
+                'reason' => 'sometimes|string|max:255'
+            ]);
+
+            // Create the block record
+            $currentUser->blockedUsers()->create([
+                'blocked_id' => $targetUser->id,
+                'reason' => $validated['reason'] ?? null
+            ]);
+
+            // Remove any existing matches between the users
+            $currentUser->matches()->where('matched_user_id', $targetUser->id)->delete();
+            $targetUser->matches()->where('matched_user_id', $currentUser->id)->delete();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'User blocked successfully'
+            ]);
+
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'User not found',
+                'error_code' => 'user_not_found'
+            ], 404);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to block user',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Report a user profile
+     *
+     * @param Request $request
+     * @param int $userId
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function reportUser(Request $request, int $userId)
+    {
+        try {
+            $currentUser = $request->user();
+            $targetUser = User::findOrFail($userId);
+
+            if ($currentUser->id === $targetUser->id) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'You cannot report yourself',
+                    'error_code' => 'cannot_report_self'
+                ], 400);
+            }
+
+            if ($currentUser->hasReported($targetUser)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'You have already reported this user',
+                    'error_code' => 'already_reported'
+                ], 400);
+            }
+
+            $validated = $request->validate([
+                'reason' => 'required|string|in:' . implode(',', array_keys(\App\Models\UserReport::getReportReasons())),
+                'description' => 'sometimes|string|max:1000',
+                'metadata' => 'sometimes|array'
+            ]);
+
+            // Create the report record
+            $currentUser->reportsMade()->create([
+                'reported_id' => $targetUser->id,
+                'reason' => $validated['reason'],
+                'description' => $validated['description'] ?? null,
+                'metadata' => $validated['metadata'] ?? null,
+                'status' => 'pending'
+            ]);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'User reported successfully. We will review your report.',
+                'data' => [
+                    'report_reasons' => \App\Models\UserReport::getReportReasons()
+                ]
+            ]);
+
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'User not found',
+                'error_code' => 'user_not_found'
+            ], 404);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to report user',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get available report reasons
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getReportReasons()
+    {
+        return response()->json([
+            'status' => 'success',
+            'data' => \App\Models\UserReport::getReportReasons()
+        ]);
+    }
+
+    /**
      * Transform profile data for API response
      */
     private function transformProfile(Profile $profile, bool $includePrivate = false): array
@@ -280,20 +502,22 @@ class ProfileController extends Controller
                 ];
             });
 
-            // Add profile photo shortcut
-            $profilePhoto = $profile->user->photos->firstWhere('is_profile_photo', true);
-            $data['profile_photo'] = $profilePhoto ? [
-                'id' => $profilePhoto->id,
-                'thumbnail_url' => $profilePhoto->thumbnail_url,
-                'medium_url' => $profilePhoto->medium_url,
-                'original_url' => $profilePhoto->original_url,
-                'image_url' => $this->imageProcessingService->getImageUrl(
-                    $profilePhoto->original_url,
-                    $profilePhoto->medium_url,
-                    $profilePhoto->thumbnail_url,
-                    'medium'
-                )
-            ] : null;
+            // Add profile photo shortcut using the new method
+            $data['profile_photo'] = [
+                'thumbnail_url' => $profile->user->getProfilePhotoUrl('thumbnail'),
+                'medium_url' => $profile->user->getProfilePhotoUrl('medium'),
+                'original_url' => $profile->user->getProfilePhotoUrl('original'),
+                'image_url' => $profile->user->getProfilePhotoUrl('medium')
+            ];
+        } else {
+            // No photos available, use fallback
+            $data['photos'] = [];
+            $data['profile_photo'] = [
+                'thumbnail_url' => $profile->user->getProfilePhotoUrl('thumbnail'),
+                'medium_url' => $profile->user->getProfilePhotoUrl('medium'),
+                'original_url' => $profile->user->getProfilePhotoUrl('original'),
+                'image_url' => $profile->user->getProfilePhotoUrl('medium')
+            ];
         }
 
         // Add profile completion data for own profile

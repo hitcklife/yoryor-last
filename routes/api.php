@@ -16,6 +16,17 @@ use App\Http\Controllers\Api\V1\HomeController;
 use App\Http\Controllers\Api\V1\PreferenceController;
 use App\Http\Controllers\Api\V1\StoryController;
 use App\Http\Controllers\Api\V1\DeviceTokenController;
+use App\Http\Controllers\Api\V1\SettingsController;
+use App\Http\Controllers\Api\V1\AccountController;
+use App\Http\Controllers\Api\V1\BlockedUsersController;
+use App\Http\Controllers\Api\V1\SupportController;
+use App\Http\Controllers\Api\V1\EmergencyContactsController;
+use App\Http\Controllers\Api\V1\CulturalProfileController;
+use App\Http\Controllers\Api\V1\FamilyPreferenceController;
+use App\Http\Controllers\Api\V1\LocationPreferenceController;
+use App\Http\Controllers\Api\V1\CareerProfileController;
+use App\Http\Controllers\Api\V1\PhysicalProfileController;
+use App\Http\Controllers\Api\V1\ComprehensiveProfileController;
 
 /*
 |--------------------------------------------------------------------------
@@ -73,6 +84,16 @@ Route::prefix('v1')->group(function () {
             Route::put('/{profile}', [ProfileController::class, 'update']);
         });
 
+        // User profile routes (for viewing other users' profiles)
+        Route::prefix('users')->group(function () {
+            Route::get('/{userId}/profile', [ProfileController::class, 'getUserProfile']);
+            Route::post('/{userId}/block', [ProfileController::class, 'blockUser']);
+            Route::post('/{userId}/report', [ProfileController::class, 'reportUser']);
+        });
+
+        // Report reasons route
+        Route::get('/report-reasons', [ProfileController::class, 'getReportReasons']);
+
         // Photo routes
         Route::prefix('photos')->group(function () {
             Route::get('/', [UserPhotoController::class, 'index']);
@@ -119,6 +140,42 @@ Route::prefix('v1')->group(function () {
         Route::prefix('preferences')->group(function () {
             Route::get('/', [PreferenceController::class, 'getPreferences']);
             Route::put('/', [PreferenceController::class, 'updatePreferences']);
+        });
+
+        // Cultural Profile routes
+        Route::prefix('cultural-profile')->group(function () {
+            Route::get('/', [CulturalProfileController::class, 'getCulturalProfile']);
+            Route::put('/', [CulturalProfileController::class, 'updateCulturalProfile']);
+        });
+
+        // Family Preference routes
+        Route::prefix('family-preferences')->group(function () {
+            Route::get('/', [FamilyPreferenceController::class, 'getFamilyPreferences']);
+            Route::put('/', [FamilyPreferenceController::class, 'updateFamilyPreferences']);
+        });
+
+        // Location Preference routes
+        Route::prefix('location-preferences')->group(function () {
+            Route::get('/', [LocationPreferenceController::class, 'getLocationPreferences']);
+            Route::put('/', [LocationPreferenceController::class, 'updateLocationPreferences']);
+        });
+
+        // Career Profile routes
+        Route::prefix('career-profile')->group(function () {
+            Route::get('/', [CareerProfileController::class, 'getCareerProfile']);
+            Route::put('/', [CareerProfileController::class, 'updateCareerProfile']);
+        });
+
+        // Physical Profile routes
+        Route::prefix('physical-profile')->group(function () {
+            Route::get('/', [PhysicalProfileController::class, 'getPhysicalProfile']);
+            Route::put('/', [PhysicalProfileController::class, 'updatePhysicalProfile']);
+        });
+
+        // Comprehensive Profile routes (all profile data in one endpoint)
+        Route::prefix('comprehensive-profile')->group(function () {
+            Route::get('/', [ComprehensiveProfileController::class, 'getAllProfileData']);
+            Route::put('/', [ComprehensiveProfileController::class, 'updateAllProfileData']);
         });
 
         // Agora routes for video/voice calling
@@ -177,6 +234,50 @@ Route::prefix('v1')->group(function () {
             // Admin-only routes
             Route::post('/sync', [\App\Http\Controllers\Api\V1\PresenceController::class, 'syncOnlineStatus']);
             Route::post('/cleanup', [\App\Http\Controllers\Api\V1\PresenceController::class, 'cleanupExpiredPresence']);
+        });
+
+        // Settings Management
+        Route::prefix('settings')->group(function () {
+            Route::get('/', [SettingsController::class, 'getAllSettings']);
+            Route::put('/', [SettingsController::class, 'updateSettings']);
+            Route::get('/notifications', [SettingsController::class, 'getNotificationSettings']);
+            Route::put('/notifications', [SettingsController::class, 'updateNotificationSettings']);
+            Route::get('/privacy', [SettingsController::class, 'getPrivacySettings']);
+            Route::put('/privacy', [SettingsController::class, 'updatePrivacySettings']);
+            Route::get('/discovery', [SettingsController::class, 'getDiscoverySettings']);
+            Route::put('/discovery', [SettingsController::class, 'updateDiscoverySettings']);
+            Route::get('/security', [SettingsController::class, 'getSecuritySettings']);
+            Route::put('/security', [SettingsController::class, 'updateSecuritySettings']);
+        });
+
+        // Account Management
+        Route::prefix('account')->group(function () {
+            Route::put('/password', [AccountController::class, 'changePassword']);
+            Route::put('/email', [AccountController::class, 'changeEmail']);
+            Route::delete('/', [AccountController::class, 'deleteAccount']);
+            Route::post('/export-data', [AccountController::class, 'requestDataExport']);
+        });
+
+        // Blocked Users
+        Route::prefix('blocked-users')->group(function () {
+            Route::get('/', [BlockedUsersController::class, 'getBlockedUsers']);
+            Route::post('/', [BlockedUsersController::class, 'blockUser']);
+            Route::delete('/{userId}', [BlockedUsersController::class, 'unblockUser']);
+        });
+
+        // Support & Feedback
+        Route::prefix('support')->group(function () {
+            Route::post('/feedback', [SupportController::class, 'submitFeedback']);
+            Route::post('/report', [SupportController::class, 'reportUser']);
+            Route::get('/faq', [SupportController::class, 'getFaq']);
+        });
+
+        // Emergency Contacts
+        Route::prefix('emergency-contacts')->group(function () {
+            Route::get('/', [EmergencyContactsController::class, 'getEmergencyContacts']);
+            Route::post('/', [EmergencyContactsController::class, 'addEmergencyContact']);
+            Route::put('/{id}', [EmergencyContactsController::class, 'updateEmergencyContact']);
+            Route::delete('/{id}', [EmergencyContactsController::class, 'deleteEmergencyContact']);
         });
     });
 });

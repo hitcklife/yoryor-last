@@ -34,7 +34,7 @@ class CallInitiatedEvent implements ShouldBroadcast
 
         // Load the relationships for the response if not already loaded
         if (!$this->call->relationLoaded('caller') || !$this->call->relationLoaded('receiver')) {
-            $this->call->load(['caller:id,email,profile_photo_path', 'receiver:id,email,profile_photo_path']);
+            $this->call->load(['caller:id,name', 'receiver:id,name', 'caller.profilePhoto', 'receiver.profilePhoto']);
         }
     }
 
@@ -73,8 +73,8 @@ class CallInitiatedEvent implements ShouldBroadcast
                 'status' => $this->call->status,
                 'caller' => [
                     'id' => $this->call->caller->id,
-                    'email' => $this->call->caller->email,
-                    'profile_photo_path' => $this->call->caller->profile_photo_path,
+                    'name' => $this->call->caller->full_name,
+                    'profile_photo_url' => $this->call->caller->getProfilePhotoUrl(),
                 ],
                 'created_at' => $this->call->created_at,
             ]

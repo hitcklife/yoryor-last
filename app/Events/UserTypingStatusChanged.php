@@ -53,7 +53,7 @@ class UserTypingStatusChanged implements ShouldBroadcast
         return [
             'user_id' => $this->user->id,
             'user_name' => $this->user->full_name,
-            'user_avatar' => $this->user->profile_photo_path,
+            'user_avatar' => $this->user->getProfilePhotoUrl(),
             'chat_id' => $this->chatId,
             'is_typing' => $this->isTyping,
             'timestamp' => $this->timestamp->toISOString(),

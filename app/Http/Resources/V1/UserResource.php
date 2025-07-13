@@ -22,7 +22,7 @@ class UserResource extends JsonResource
             'email_verified_at' => $this->email_verified_at,
             'phone_verified_at' => $this->phone_verified_at,
             'registration_completed' => $this->registration_completed,
-            'profile_photo_path' => $this->profile_photo_path,
+            'profile_photo_url' => $this->getProfilePhotoUrl(),
             'profile' => new ProfileResource($this->whenLoaded('profile')),
             'preference' => new PreferenceResource($this->whenLoaded('preference')),
             'created_at' => $this->created_at,

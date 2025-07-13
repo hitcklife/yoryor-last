@@ -66,7 +66,7 @@ class UserOnlineStatusChanged implements ShouldBroadcast
         return [
             'user_id' => $this->user->id,
             'user_name' => $this->user->full_name,
-            'user_avatar' => $this->user->profile_photo_path,
+            'user_avatar' => $this->user->getProfilePhotoUrl(),
             'is_online' => $this->isOnline,
             'last_active_at' => $this->user->last_active_at?->toISOString(),
             'status_changed_at' => $this->timestamp->toISOString(),

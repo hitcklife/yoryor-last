@@ -169,7 +169,7 @@ class AuthService
             $user->update([
                 'email' => $data['email'] ?? $user->email,
                 'registration_completed' => true,
-                'is_private' => $data['is_private'] ?? $user->is_private,
+                'is_private' => $data['profile_private'] ?? $user->is_private,
                 'phone_verified_at' => now()
             ]);
 
@@ -228,7 +228,6 @@ class AuthService
             // Handle photos if provided
             if (isset($data['photos']) && is_array($data['photos']) && !empty($data['photos'])) {
                 $mainPhotoIndex = isset($data['mainPhotoIndex']) ? (int)$data['mainPhotoIndex'] : 0;
-                $profilePhotoUrl = null; // Track the profile photo URL
 
                 // Process each photo
                 foreach ($data['photos'] as $index => $photoData) {
@@ -255,9 +254,9 @@ class AuthService
                         // Handle uploaded file from web using MediaUploadService
                         try {
                             $uploadResult = $this->mediaUploadService->uploadMedia(
-                                $photoData, 
-                                'profile_photos', 
-                                $user->id, 
+                                $photoData,
+                                'profile_photos',
+                                $user->id,
                                 ['is_profile_photo' => $isProfilePhoto]
                             );
 
@@ -276,7 +275,7 @@ class AuthService
                         // and we just need to create the database record
                         $filename = $photoData['name'];
                         $s3Path = "media/profile_photos/{$user->id}/{$filename}";
-                        
+
                         // Check if the file exists in S3
                         if (!Storage::disk('s3')->exists($s3Path)) {
                             \Log::warning("Photo file not found in S3: " . $s3Path);
@@ -284,7 +283,7 @@ class AuthService
                         }
 
                         $originalUrl = Storage::disk('s3')->url($s3Path);
-                        
+
                         // For mobile uploads, we might need to generate thumbnails
                         // This could be done asynchronously or on-demand
                         $thumbnailUrl = $originalUrl; // Fallback to original for now
@@ -294,10 +293,7 @@ class AuthService
                         continue;
                     }
 
-                    // Store the profile photo URL for updating the user record
-                    if ($isProfilePhoto) {
-                        $profilePhotoUrl = $originalUrl;
-                    }
+                    // Profile photo is now handled by the UserPhoto model's is_profile_photo flag
 
                     // Create photo record with all required fields
                     \App\Models\UserPhoto::create([
@@ -314,10 +310,8 @@ class AuthService
                     ]);
                 }
 
-                // Update user's profile_photo_path if a profile photo was set
-                if ($profilePhotoUrl) {
-                    $user->update(['profile_photo_path' => $profilePhotoUrl]);
-                }
+                // The profile photo is now handled by the UserPhoto model's is_profile_photo flag
+                // No need to update user's profile_photo_path as it's been removed
             }
 
             DB::commit();

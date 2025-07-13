@@ -20,7 +20,7 @@ class UserResource extends JsonResource
             'attributes' => [
                 'email' => $this->email,
                 'phone' => $this->phone,
-                'profile_photo_path' => $this->profile_photo_path,
+                'profile_photo_url' => $this->getProfilePhotoUrl(),
                 'registration_completed' => $this->registration_completed,
                 'is_private' => $this->is_private,
                 'created_at' => $this->created_at,

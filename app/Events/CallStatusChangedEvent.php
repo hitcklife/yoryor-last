@@ -43,7 +43,7 @@ class CallStatusChangedEvent implements ShouldBroadcast
 
         // Load the relationships for the response if not already loaded
         if (!$this->call->relationLoaded('caller') || !$this->call->relationLoaded('receiver')) {
-            $this->call->load(['caller:id,email,profile_photo_path', 'receiver:id,email,profile_photo_path']);
+            $this->call->load(['caller:id,name', 'receiver:id,name', 'caller.profilePhoto', 'receiver.profilePhoto']);
         }
     }
 
@@ -95,13 +95,13 @@ class CallStatusChangedEvent implements ShouldBroadcast
                 'ended_at' => $this->call->ended_at,
                 'caller' => [
                     'id' => $this->call->caller->id,
-                    'email' => $this->call->caller->email,
-                    'profile_photo_path' => $this->call->caller->profile_photo_path,
+                    'name' => $this->call->caller->full_name,
+                    'profile_photo_url' => $this->call->caller->getProfilePhotoUrl(),
                 ],
                 'receiver' => [
                     'id' => $this->call->receiver->id,
-                    'email' => $this->call->receiver->email,
-                    'profile_photo_path' => $this->call->receiver->profile_photo_path,
+                    'name' => $this->call->receiver->full_name,
+                    'profile_photo_url' => $this->call->receiver->getProfilePhotoUrl(),
                 ],
                 'changed_by' => $this->changedBy,
                 'updated_at' => $this->call->updated_at,

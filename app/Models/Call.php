@@ -86,21 +86,21 @@ class Call extends Model
     public function getFormattedDuration(): string
     {
         $seconds = $this->getDurationInSeconds();
-        
+
         if ($seconds < 60) {
             return $seconds . 's';
         }
-        
+
         $minutes = floor($seconds / 60);
         $remainingSeconds = $seconds % 60;
-        
+
         if ($minutes < 60) {
             return $remainingSeconds > 0 ? "{$minutes}m {$remainingSeconds}s" : "{$minutes}m";
         }
-        
+
         $hours = floor($minutes / 60);
         $remainingMinutes = $minutes % 60;
-        
+
         $formatted = "{$hours}h";
         if ($remainingMinutes > 0) {
             $formatted .= " {$remainingMinutes}m";
@@ -108,7 +108,7 @@ class Call extends Model
         if ($remainingSeconds > 0) {
             $formatted .= " {$remainingSeconds}s";
         }
-        
+
         return $formatted;
     }
 
@@ -183,12 +183,12 @@ class Call extends Model
             'caller' => [
                 'id' => $this->caller->id,
                 'name' => $this->caller->name,
-                'profile_photo_path' => $this->caller->profile_photo_path,
+                'profile_photo_url' => $this->caller->getProfilePhotoUrl(),
             ],
             'receiver' => [
                 'id' => $this->receiver->id,
                 'name' => $this->receiver->name,
-                'profile_photo_path' => $this->receiver->profile_photo_path,
+                'profile_photo_url' => $this->receiver->getProfilePhotoUrl(),
             ],
         ];
     }

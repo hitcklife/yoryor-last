@@ -94,14 +94,14 @@ class NewMatchEvent implements ShouldBroadcast
                 'initiator' => [
                     'id' => $this->initiator->id,
                     'name' => $this->initiator->full_name,
-                    'profile_photo' => $this->initiator->profilePhoto?->thumbnail_url ?? $this->initiator->profile_photo_path,
+                    'profile_photo' => $this->initiator->getProfilePhotoUrl('thumbnail'),
                     'age' => $this->initiator->age,
                     'city' => $this->initiator->profile?->city,
                 ],
                 'receiver' => [
                     'id' => $this->receiver->id,
                     'name' => $this->receiver->full_name,
-                    'profile_photo' => $this->receiver->profilePhoto?->thumbnail_url ?? $this->receiver->profile_photo_path,
+                    'profile_photo' => $this->receiver->getProfilePhotoUrl('thumbnail'),
                     'age' => $this->receiver->age,
                     'city' => $this->receiver->profile?->city,
                 ]

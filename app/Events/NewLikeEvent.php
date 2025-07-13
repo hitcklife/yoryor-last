@@ -93,7 +93,7 @@ class NewLikeEvent implements ShouldBroadcast
                 'liker' => [
                     'id' => $this->liker->id,
                     'name' => $this->liker->full_name,
-                    'profile_photo' => $this->liker->profilePhoto?->thumbnail_url ?? $this->liker->profile_photo_path,
+                    'profile_photo' => $this->liker->getProfilePhotoUrl('thumbnail'),
                     'age' => $this->liker->age,
                     'city' => $this->liker->profile?->city,
                 ],

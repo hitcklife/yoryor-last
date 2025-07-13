@@ -152,10 +152,40 @@ class VideoCallController extends Controller
           ->first();
 
         if ($existingCall) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'There is already an active call between these users'
-            ], 409);
+            // Instead of returning an error, return the existing call details
+            // so the caller can join the existing call
+            try {
+                // Generate a token for the existing call
+                $token = $this->videoSDKService->generateToken($existingCall->channel_name);
+
+                return response()->json([
+                    'status' => 'success',
+                    'message' => 'Joining existing call',
+                    'data' => [
+                        'call_id' => $existingCall->id,
+                        'meeting_id' => $existingCall->channel_name,
+                        'token' => $token,
+                        'type' => $existingCall->type,
+                        'caller' => [
+                            'id' => $existingCall->caller_id === $caller->id ? $caller->id : $receiverId,
+                            'name' => $existingCall->caller_id === $caller->id ? $caller->full_name : User::find($receiverId)->full_name,
+                        ],
+                        'receiver' => [
+                            'id' => $existingCall->receiver_id === $caller->id ? $caller->id : $receiverId,
+                            'name' => $existingCall->receiver_id === $caller->id ? $caller->full_name : User::find($receiverId)->full_name,
+                        ],
+                    ]
+                ]);
+            } catch (Exception $e) {
+                Log::error('Failed to join existing call: ' . $e->getMessage(), [
+                    'call_id' => $existingCall->id,
+                    'user_id' => $caller->id
+                ]);
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Failed to join existing call'
+                ], 500);
+            }
         }
 
         $receiver = User::findOrFail($receiverId);
@@ -181,11 +211,11 @@ class VideoCallController extends Controller
                     'message_id' => $callMessage?->id,
                     'caller' => [
                         'id' => $caller->id,
-                        'name' => $caller->name,
+                        'name' => $caller->full_name,
                     ],
                     'receiver' => [
                         'id' => $receiver->id,
-                        'name' => $receiver->name,
+                        'name' => $receiver->full_name,
                     ],
                 ]
             ], 201);
@@ -252,11 +282,11 @@ class VideoCallController extends Controller
                     'message_id' => $callMessage?->id,
                     'caller' => [
                         'id' => $call->caller->id,
-                        'name' => $call->caller->name,
+                        'name' => $call->caller->full_name,
                     ],
                     'receiver' => [
                         'id' => $call->receiver->id,
-                        'name' => $call->receiver->name,
+                        'name' => $call->receiver->full_name,
                     ],
                 ]
             ]);
