@@ -415,8 +415,8 @@ class ChatController extends Controller
      *                 @OA\Property(property="media_file", type="file", description="Media file to upload (image, video, audio, or other file)"),
      *                 @OA\Property(property="message_type", type="string", enum={"text", "image", "video", "audio", "voice", "file", "location", "call"}, description="Type of message (optional, will be auto-detected for uploads)"),
      *                 @OA\Property(
-     *                     property="media_data", 
-     *                     type="object", 
+     *                     property="media_data",
+     *                     type="object",
      *                     description="Additional metadata for the media (optional). For call messages, use call data structure",
      *                     @OA\Property(property="call_type", type="string", enum={"video", "audio"}, description="Type of call (required for call messages)"),
      *                     @OA\Property(property="call_status", type="string", enum={"missed", "incoming", "outgoing", "completed"}, description="Status of the call (required for call messages)"),
@@ -431,8 +431,8 @@ class ChatController extends Controller
      *             @OA\Property(property="media_url", type="string", example="https://example.com/media/1.jpg", description="URL to attached media (optional)"),
      *             @OA\Property(property="message_type", type="string", enum={"text", "image", "video", "audio", "voice", "file", "location", "call"}, description="Type of message"),
      *             @OA\Property(
-     *                 property="media_data", 
-     *                 type="object", 
+     *                 property="media_data",
+     *                 type="object",
      *                 description="Additional metadata for the media (optional). For call messages, use call data structure",
      *                 @OA\Property(property="call_type", type="string", enum={"video", "audio"}, description="Type of call (required for call messages)"),
      *                 @OA\Property(property="call_status", type="string", enum={"missed", "incoming", "outgoing", "completed"}, description="Status of the call (required for call messages)"),
@@ -554,7 +554,7 @@ class ChatController extends Controller
             if ($messageType === 'call') {
                 // Validate call-specific data
                 $callData = $validated['media_data'] ?? [];
-                
+
                 // Validate call data structure
                 $callValidation = validator($callData, [
                     'call_type' => ['required', 'string', 'in:video,audio'],
@@ -575,7 +575,7 @@ class ChatController extends Controller
                 if (empty($validated['content'])) {
                     $callType = ucfirst($callData['call_type']);
                     $callStatus = $callData['call_status'];
-                    
+
                     switch ($callStatus) {
                         case 'missed':
                             $validated['content'] = "Missed {$callType} Call";
@@ -640,18 +640,18 @@ class ChatController extends Controller
                     if ($messageType === 'voice') {
                         $uploadOptions['is_voice_message'] = true;
                         $uploadOptions['duration'] = $mediaData['duration'] ?? null;
-                        
+
                         // Set a default content for voice messages if none provided
                         if (empty($validated['content'])) {
                             $validated['content'] = 'Voice Message';
                         }
                     }
 
-                    // Upload using MediaUploadService
+                    // Uplowad using MediaUploadService
                     $uploadResult = $this->mediaUploadService->uploadMedia(
-                        $file, 
-                        'chat', 
-                        $user->id, 
+                        $file,
+                        'chat',
+                        $user->id,
                         $uploadOptions
                     );
 
@@ -690,11 +690,11 @@ class ChatController extends Controller
             foreach ($otherUsers as $otherUser) {
                 $totalUnreadCount = $otherUser->getUnreadMessagesCount();
                 $chatUnreadCount = Message::getUnreadCountForUserInChat($otherUser, $chat->id);
-                
+
                 broadcast(new UnreadCountUpdateEvent(
-                    $otherUser, 
-                    $totalUnreadCount, 
-                    $chat->id, 
+                    $otherUser,
+                    $totalUnreadCount,
+                    $chat->id,
                     $chatUnreadCount
                 ))->toOthers();
             }
@@ -817,11 +817,11 @@ class ChatController extends Controller
                 // Broadcast updated unread count
                 $totalUnreadCount = $user->getUnreadMessagesCount();
                 $chatUnreadCount = Message::getUnreadCountForUserInChat($user, $chat->id);
-                
+
                 broadcast(new UnreadCountUpdateEvent(
-                    $user, 
-                    $totalUnreadCount, 
-                    $chat->id, 
+                    $user,
+                    $totalUnreadCount,
+                    $chat->id,
                     $chatUnreadCount
                 ))->toOthers();
             }
@@ -881,17 +881,17 @@ class ChatController extends Controller
         if ($seconds < 60) {
             return $seconds . 's';
         }
-        
+
         $minutes = floor($seconds / 60);
         $remainingSeconds = $seconds % 60;
-        
+
         if ($minutes < 60) {
             return $remainingSeconds > 0 ? "{$minutes}m {$remainingSeconds}s" : "{$minutes}m";
         }
-        
+
         $hours = floor($minutes / 60);
         $remainingMinutes = $minutes % 60;
-        
+
         $formatted = "{$hours}h";
         if ($remainingMinutes > 0) {
             $formatted .= " {$remainingMinutes}m";
@@ -899,7 +899,7 @@ class ChatController extends Controller
         if ($remainingSeconds > 0) {
             $formatted .= " {$remainingSeconds}s";
         }
-        
+
         return $formatted;
     }
 
@@ -1516,7 +1516,7 @@ class ChatController extends Controller
             // Transform messages with enhanced call data
             $transformedCallMessages = $callMessages->getCollection()->map(function ($message) use ($user) {
                 $readStatus = $message->getReadStatusFor($user);
-                
+
                 return [
                     'id' => $message->id,
                     'chat_id' => $message->chat_id,
