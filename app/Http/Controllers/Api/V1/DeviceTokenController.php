@@ -34,35 +34,49 @@ class DeviceTokenController extends Controller
             ]);
 
             $user = Auth::user();
+            $token = $validated['token'];
 
-            // Check if the token already exists for this user
-            $deviceToken = $user->deviceTokens()
-                ->where('token', $validated['token'])
-                ->first();
+            // Check if the token already exists globally (not just for this user)
+            $existingToken = DeviceToken::where('token', $token)->first();
 
-            if ($deviceToken) {
-                // Update existing token
-                $deviceToken->update([
-                    'device_name' => $validated['deviceName'] ?? $deviceToken->device_name,
-                    'brand' => $validated['brand'] ?? $deviceToken->brand,
-                    'model_name' => $validated['modelName'] ?? $deviceToken->model_name,
-                    'os_name' => $validated['osName'] ?? $deviceToken->os_name,
-                    'os_version' => $validated['osVersion'] ?? $deviceToken->os_version,
-                    'device_type' => $validated['deviceType'] ?? $deviceToken->device_type,
-                    'is_device' => $validated['isDevice'] ?? $deviceToken->is_device,
-                    'manufacturer' => $validated['manufacturer'] ?? $deviceToken->manufacturer,
-                ]);
+            if ($existingToken) {
+                // If token exists but belongs to different user, update it to current user
+                if ($existingToken->user_id !== $user->id) {
+                    $existingToken->update([
+                        'user_id' => $user->id,
+                        'device_name' => $validated['deviceName'] ?? $existingToken->device_name,
+                        'brand' => $validated['brand'] ?? $existingToken->brand,
+                        'model_name' => $validated['modelName'] ?? $existingToken->model_name,
+                        'os_name' => $validated['osName'] ?? $existingToken->os_name,
+                        'os_version' => $validated['osVersion'] ?? $existingToken->os_version,
+                        'device_type' => $validated['deviceType'] ?? $existingToken->device_type,
+                        'is_device' => $validated['isDevice'] ?? $existingToken->is_device,
+                        'manufacturer' => $validated['manufacturer'] ?? $existingToken->manufacturer,
+                    ]);
+                } else {
+                    // Token exists and belongs to current user, just update the device info
+                    $existingToken->update([
+                        'device_name' => $validated['deviceName'] ?? $existingToken->device_name,
+                        'brand' => $validated['brand'] ?? $existingToken->brand,
+                        'model_name' => $validated['modelName'] ?? $existingToken->model_name,
+                        'os_name' => $validated['osName'] ?? $existingToken->os_name,
+                        'os_version' => $validated['osVersion'] ?? $existingToken->os_version,
+                        'device_type' => $validated['deviceType'] ?? $existingToken->device_type,
+                        'is_device' => $validated['isDevice'] ?? $existingToken->is_device,
+                        'manufacturer' => $validated['manufacturer'] ?? $existingToken->manufacturer,
+                    ]);
+                }
 
                 return response()->json([
                     'status' => 'success',
                     'message' => 'Device token updated successfully',
-                    'data' => $deviceToken
+                    'data' => $existingToken
                 ]);
             }
 
-            // Create new token
+            // Token doesn't exist, create new one
             $deviceToken = $user->deviceTokens()->create([
-                'token' => $validated['token'],
+                'token' => $token,
                 'device_name' => $validated['deviceName'] ?? null,
                 'brand' => $validated['brand'] ?? null,
                 'model_name' => $validated['modelName'] ?? null,
@@ -81,12 +95,14 @@ class DeviceTokenController extends Controller
         } catch (\Exception $e) {
             Log::error('Failed to store device token: ' . $e->getMessage(), [
                 'user_id' => Auth::id(),
-                'request' => $request->all()
+                'request' => $request->all(),
+                'exception' => $e->getTraceAsString()
             ]);
 
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to store device token: ' . $e->getMessage()
+                'message' => 'Failed to store device token',
+                'error_code' => 'DEVICE_TOKEN_STORE_FAILED'
             ], 500);
         }
     }
@@ -132,7 +148,8 @@ class DeviceTokenController extends Controller
 
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to delete device token: ' . $e->getMessage()
+                'message' => 'Failed to delete device token',
+                'error_code' => 'DEVICE_TOKEN_DELETE_FAILED'
             ], 500);
         }
     }
