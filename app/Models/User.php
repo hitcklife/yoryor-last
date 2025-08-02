@@ -366,29 +366,19 @@ class User extends Authenticatable
 
     public function getFullNameAttribute(): string
     {
-        // Use cached value if available to avoid repeated calculations
-        if (isset($this->attributes['full_name'])) {
-            return $this->attributes['full_name'];
-        }
-
         $firstName = $this->profile?->first_name;
         $lastName = $this->profile?->last_name;
 
         // Handle different combinations of first_name and last_name
         if ($firstName && $lastName) {
-            $fullName = $firstName . ' ' . $lastName;
+            return $firstName . ' ' . $lastName;
         } elseif ($firstName) {
-            $fullName = $firstName;
+            return $firstName;
         } elseif ($lastName) {
-            $fullName = $lastName;
+            return $lastName;
         } else {
-            $fullName = 'Anonymous';
+            return 'Anonymous';
         }
-
-        // Cache the result
-        $this->attributes['full_name'] = $fullName;
-
-        return $fullName;
     }
 
     public function initials(): string

@@ -58,6 +58,11 @@ Broadcast::channel('presence-chat.{chatId}', function ($user, $chatId) {
         $user->trackChatActivity('chat_presence_joined', $chat->id);
     }
 
+    // Load profile relationship if not already loaded
+    if (!$user->relationLoaded('profile')) {
+        $user->load('profile');
+    }
+
     // Return user info for chat presence
     return [
         'id' => $user->id,

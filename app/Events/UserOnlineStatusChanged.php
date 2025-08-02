@@ -47,7 +47,7 @@ class UserOnlineStatusChanged implements ShouldBroadcast
         // Only broadcast to active chats to reduce overhead
         // Get only the most recent/active chats (limit to 5 most recent)
         $recentChatIds = $this->user->chats()
-            ->orderBy('chat_user.updated_at', 'desc')
+            ->orderBy('chat_users.updated_at', 'desc')
             ->limit(5)
             ->pluck('chats.id');
 
@@ -65,7 +65,7 @@ class UserOnlineStatusChanged implements ShouldBroadcast
     {
         return [
             'user_id' => $this->user->id,
-            'user_name' => $this->user->full_name,
+            'user_name' => $this->user->getFullNameAttribute(),
             'user_avatar' => $this->user->getProfilePhotoUrl(),
             'is_online' => $this->isOnline,
             'last_active_at' => $this->user->last_active_at?->toISOString(),

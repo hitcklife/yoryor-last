@@ -16,6 +16,7 @@ use App\Services\MediaUploadService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Http\JsonResponse;
 
@@ -647,7 +648,7 @@ class ChatController extends Controller
                         }
                     }
 
-                    // Uplowad using MediaUploadService
+                    // Upload using MediaUploadService
                     $uploadResult = $this->mediaUploadService->uploadMedia(
                         $file,
                         'chat',
@@ -681,6 +682,14 @@ class ChatController extends Controller
 
             // Update chat activity
             $chat->updateLastActivity();
+
+            // Log message creation for debugging duplicate notifications
+            Log::info('Message created and broadcasting event', [
+                'message_id' => $message->id,
+                'chat_id' => $chat->id,
+                'sender_id' => $user->id,
+                'request_id' => request()->header('X-Request-ID', uniqid('req_', true)),
+            ]);
 
             // Broadcast real-time event
             broadcast(new NewMessageEvent($message))->toOthers();

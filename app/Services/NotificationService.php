@@ -332,7 +332,7 @@ class NotificationService
         $this->sendNotification(
             $recipient,
             'new_message',
-            "New message from {$sender->full_name}",
+            "{$sender->full_name}",
             $messagePreview,
             [
                 'sender_id' => $sender->id,

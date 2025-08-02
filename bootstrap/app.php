@@ -17,6 +17,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'rate.limit.login' => \App\Http\Middleware\RateLimitAuth::class,
             'rate.limit.otp' => \App\Http\Middleware\RateLimitAuth::class.':otp',
             'secure.headers' => \App\Http\Middleware\SecureHeaders::class,
+            'chat.rate.limit' => \App\Http\Middleware\ChatRateLimit::class,
         ]);
 
         // Apply secure headers middleware to all API routes

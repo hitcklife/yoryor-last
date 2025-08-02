@@ -2,8 +2,8 @@
 
 namespace App\Services;
 
-use App\Models\User;
 use App\Models\DeviceToken;
+use App\Models\User;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -16,12 +16,6 @@ class ExpoPushService
 
     /**
      * Send a push notification to a user's Expo devices
-     *
-     * @param User $user
-     * @param string $title
-     * @param string $message
-     * @param array $data
-     * @return array
      */
     public function sendNotification(User $user, string $title, string $message, array $data = []): array
     {
@@ -29,24 +23,27 @@ class ExpoPushService
 
         if ($deviceTokens->isEmpty()) {
             Log::info('No device tokens found for user', ['user_id' => $user->id]);
+
             return [
                 'success' => false,
                 'message' => 'No device tokens found for user',
-                'data' => []
+                'data' => [],
             ];
         }
+
+        // Log device tokens to debug duplicates
+        Log::info('Sending notification to user device tokens', [
+            'user_id' => $user->id,
+            'tokens_count' => $deviceTokens->count(),
+            'tokens' => $deviceTokens->pluck('token')->toArray(),
+            'title' => $title,
+        ]);
 
         return $this->sendNotificationToTokens($deviceTokens, $title, $message, $data);
     }
 
     /**
      * Send a push notification to multiple users
-     *
-     * @param array $userIds
-     * @param string $title
-     * @param string $message
-     * @param array $data
-     * @return array
      */
     public function sendNotificationToUsers(array $userIds, string $title, string $message, array $data = []): array
     {
@@ -54,10 +51,11 @@ class ExpoPushService
 
         if ($deviceTokens->isEmpty()) {
             Log::info('No device tokens found for users', ['user_ids' => $userIds]);
+
             return [
                 'success' => false,
                 'message' => 'No device tokens found for users',
-                'data' => []
+                'data' => [],
             ];
         }
 
@@ -67,11 +65,7 @@ class ExpoPushService
     /**
      * Send a push notification to specific device tokens
      *
-     * @param \Illuminate\Database\Eloquent\Collection $deviceTokens
-     * @param string $title
-     * @param string $message
-     * @param array $data
-     * @return array
+     * @param  \Illuminate\Database\Eloquent\Collection  $deviceTokens
      */
     public function sendNotificationToTokens($deviceTokens, string $title, string $message, array $data = []): array
     {
@@ -80,13 +74,13 @@ class ExpoPushService
 
         foreach ($deviceTokens as $deviceToken) {
             // Skip non-Expo tokens or invalid tokens
-            if (!$this->isValidExpoToken($deviceToken->token)) {
+            if (! $this->isValidExpoToken($deviceToken->token)) {
                 continue;
             }
 
             $validTokens[] = $deviceToken->token;
 
-            $messages[] = [
+            $messagePayload = [
                 'to' => $deviceToken->token,
                 'title' => $title,
                 'body' => $message,
@@ -96,14 +90,29 @@ class ExpoPushService
                 'channelId' => 'default',
                 '_displayInForeground' => true,
             ];
+
+            // Add image to notification if imageUrl is provided in data
+            if (isset($data['imageUrl']) && ! empty($data['imageUrl'])) {
+                $messagePayload['image'] = $data['imageUrl'];
+            }
+
+            // Add richContent for avatar image in notifications (primarily for message notifications)
+            if (isset($data['sender_photo']) && ! empty($data['sender_photo'])) {
+                $messagePayload['richContent'] = [
+                    'image' => $data['sender_photo'],
+                ];
+            }
+
+            $messages[] = $messagePayload;
         }
 
         if (empty($messages)) {
             Log::info('No valid Expo tokens found', ['tokens_count' => $deviceTokens->count()]);
+
             return [
                 'success' => false,
                 'message' => 'No valid Expo tokens found',
-                'data' => []
+                'data' => [],
             ];
         }
 
@@ -112,33 +121,30 @@ class ExpoPushService
 
             Log::info('Expo push notification sent', [
                 'tokens_count' => count($validTokens),
-                'response' => $response->json()
+                'response' => $response->json(),
             ]);
 
             return [
                 'success' => $response->successful(),
                 'message' => $response->successful() ? 'Notifications sent successfully' : 'Failed to send notifications',
-                'data' => $response->json()
+                'data' => $response->json(),
             ];
         } catch (\Exception $e) {
             Log::error('Failed to send Expo push notification', [
                 'error' => $e->getMessage(),
-                'tokens_count' => count($validTokens)
+                'tokens_count' => count($validTokens),
             ]);
 
             return [
                 'success' => false,
-                'message' => 'Exception: ' . $e->getMessage(),
-                'data' => []
+                'message' => 'Exception: '.$e->getMessage(),
+                'data' => [],
             ];
         }
     }
 
     /**
      * Check if a token is a valid Expo push token
-     *
-     * @param string $token
-     * @return bool
      */
     private function isValidExpoToken(string $token): bool
     {

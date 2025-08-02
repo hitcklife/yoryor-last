@@ -43,7 +43,7 @@ class CallStatusChangedEvent implements ShouldBroadcast
 
         // Load the relationships for the response if not already loaded
         if (!$this->call->relationLoaded('caller') || !$this->call->relationLoaded('receiver')) {
-            $this->call->load(['caller:id,name', 'receiver:id,name', 'caller.profilePhoto', 'receiver.profilePhoto']);
+            $this->call->load(['caller.profile', 'caller.profilePhoto', 'receiver.profile', 'receiver.profilePhoto']);
         }
     }
 

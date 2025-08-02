@@ -132,6 +132,7 @@ class VideoCallController extends Controller
         ]);
 
         $caller = Auth::user();
+        $caller->load('profile');
         $receiverId = $request->recipient_id;
 
         // Prevent calling yourself
@@ -168,11 +169,11 @@ class VideoCallController extends Controller
                         'type' => $existingCall->type,
                         'caller' => [
                             'id' => $existingCall->caller_id === $caller->id ? $caller->id : $receiverId,
-                            'name' => $existingCall->caller_id === $caller->id ? $caller->full_name : User::find($receiverId)->full_name,
+                            'name' => $existingCall->caller_id === $caller->id ? $caller->full_name : User::with('profile')->find($receiverId)->full_name,
                         ],
                         'receiver' => [
                             'id' => $existingCall->receiver_id === $caller->id ? $caller->id : $receiverId,
-                            'name' => $existingCall->receiver_id === $caller->id ? $caller->full_name : User::find($receiverId)->full_name,
+                            'name' => $existingCall->receiver_id === $caller->id ? $caller->full_name : User::with('profile')->find($receiverId)->full_name,
                         ],
                     ]
                 ]);
@@ -188,7 +189,7 @@ class VideoCallController extends Controller
             }
         }
 
-        $receiver = User::findOrFail($receiverId);
+        $receiver = User::with('profile')->findOrFail($receiverId);
 
         try {
             $callData = $this->videoSDKService->createCall($caller, $receiver, $request->call_type);
@@ -240,7 +241,7 @@ class VideoCallController extends Controller
      */
     public function joinCall(int $callId): JsonResponse
     {
-        $call = Call::findOrFail($callId);
+        $call = Call::with(['caller.profile', 'receiver.profile'])->findOrFail($callId);
         $user = Auth::user();
 
         // Check if the user is the receiver of the call

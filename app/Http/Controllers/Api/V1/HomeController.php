@@ -55,7 +55,7 @@ class HomeController extends Controller
                     'phone' => $user->phone,
                     'email' => $user->email,
                     'username' => $user->username,
-                    'full_name' => $user->full_name,
+                    'full_name' => $user->getFullNameAttribute(),
                     'age' => $user->age,
                     'is_online' => $user->isOnline(),
                     'last_active_at' => $user->last_active_at,

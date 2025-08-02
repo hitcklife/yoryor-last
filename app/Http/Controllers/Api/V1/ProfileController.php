@@ -224,7 +224,7 @@ class ProfileController extends Controller
     }
 
     /**
-     * Get another user's profile (for matched users)
+     * Get another user's profile with comprehensive information
      *
      * @param Request $request
      * @param int $userId
@@ -245,15 +245,6 @@ class ProfileController extends Controller
                 ], 403);
             }
 
-            // Check if users are matched (optional requirement)
-            if (!$currentUser->hasMatched($targetUser)) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'You can only view profiles of matched users',
-                    'error_code' => 'not_matched'
-                ], 403);
-            }
-
             $profile = $targetUser->profile;
             if (!$profile) {
                 return response()->json([
@@ -263,13 +254,22 @@ class ProfileController extends Controller
                 ], 404);
             }
 
-            // Load profile with relationships
-            $profile->load([
-                'user:id,email,phone,last_active_at,registration_completed',
-                'user.photos' => function($query) {
+            // Load comprehensive profile data with all relationships
+            $targetUser->load([
+                'profile.country:id,name,code',
+                'preference',
+                'culturalProfile',
+                'familyPreference',
+                'locationPreference',
+                'careerProfile',
+                'physicalProfile',
+                'photos' => function($query) {
                     $query->approved()->public()->ordered()->select('id', 'user_id', 'original_url', 'medium_url', 'thumbnail_url', 'is_profile_photo', 'order');
                 },
-                'country:id,name,code'
+                'profilePhoto:id,user_id,original_url,medium_url,thumbnail_url',
+                'activeStories' => function($query) {
+                    $query->select('id', 'user_id', 'media_url', 'type', 'created_at');
+                }
             ]);
 
             // Increment profile views
@@ -278,10 +278,14 @@ class ProfileController extends Controller
             return response()->json([
                 'status' => 'success',
                 'data' => [
-                    'profile' => $this->transformProfile($profile, false),
-                    'is_matched' => $currentUser->hasMatched($targetUser),
-                    'is_blocked' => $currentUser->hasBlocked($targetUser),
-                    'has_reported' => $currentUser->hasReported($targetUser),
+                    'profile' => $this->transformComprehensiveProfile($targetUser, false),
+                    'relationship_status' => [
+                        'is_matched' => $currentUser->hasMatched($targetUser),
+                        'is_blocked' => $currentUser->hasBlocked($targetUser),
+                        'has_reported' => $currentUser->hasReported($targetUser),
+                        'has_liked' => $currentUser->hasLiked($targetUser),
+                        'has_disliked' => $currentUser->hasDisliked($targetUser),
+                    ]
                 ]
             ]);
 
@@ -519,6 +523,100 @@ class ProfileController extends Controller
                 'image_url' => $profile->user->getProfilePhotoUrl('medium')
             ];
         }
+
+        // Add profile completion data for own profile
+        if ($includePrivate) {
+            $data['completion'] = $this->calculateProfileCompletion($profile);
+        }
+
+        return $data;
+    }
+
+    /**
+     * Transform comprehensive profile data including all relationships
+     */
+    private function transformComprehensiveProfile(User $user, bool $includePrivate = false): array
+    {
+        $profile = $user->profile;
+        
+        $data = [
+            'id' => $profile->id,
+            'user_id' => $profile->user_id,
+            'first_name' => $profile->first_name,
+            'last_name' => $profile->last_name,
+            'full_name' => $user->full_name,
+            'gender' => $profile->gender,
+            'age' => $profile->age,
+            'date_of_birth' => $includePrivate ? $profile->date_of_birth : null,
+            'city' => $profile->city,
+            'state' => $profile->state,
+            'province' => $profile->province,
+            'country' => $profile->country,
+            'bio' => $profile->bio,
+            'profession' => $profile->profession,
+            'occupation' => $profile->occupation,
+            'interests' => $profile->interests,
+            'looking_for' => $profile->looking_for,
+            'profile_views' => $profile->profile_views,
+            'profile_completed_at' => $profile->profile_completed_at,
+            'created_at' => $profile->created_at,
+            'updated_at' => $profile->updated_at,
+        ];
+
+        // Add user data
+        $data['user'] = [
+            'id' => $user->id,
+            'email' => $includePrivate ? $user->email : null,
+            'phone' => $includePrivate ? $user->phone : null,
+            'last_active_at' => $user->last_active_at,
+            'registration_completed' => $user->registration_completed,
+            'is_online' => $user->isOnline(),
+            'online_status' => $user->getOnlineStatus(),
+        ];
+
+        // Add photos
+        $data['photos'] = $user->photos->map(function($photo) {
+            return [
+                'id' => $photo->id,
+                'original_url' => $photo->original_url,
+                'medium_url' => $photo->medium_url,
+                'thumbnail_url' => $photo->thumbnail_url,
+                'is_profile_photo' => $photo->is_profile_photo,
+                'order' => $photo->order,
+                'image_url' => $this->imageProcessingService->getImageUrl(
+                    $photo->original_url,
+                    $photo->medium_url,
+                    $photo->thumbnail_url,
+                    'medium'
+                )
+            ];
+        });
+
+        // Profile photo shortcut
+        $data['profile_photo'] = [
+            'thumbnail_url' => $user->getProfilePhotoUrl('thumbnail'),
+            'medium_url' => $user->getProfilePhotoUrl('medium'),
+            'original_url' => $user->getProfilePhotoUrl('original'),
+            'image_url' => $user->getProfilePhotoUrl('medium')
+        ];
+
+        // Add comprehensive profile sections
+        $data['preferences'] = $user->preference;
+        $data['cultural_profile'] = $user->culturalProfile;
+        $data['family_preferences'] = $user->familyPreference;
+        $data['location_preferences'] = $user->locationPreference;
+        $data['career_profile'] = $user->careerProfile;
+        $data['physical_profile'] = $user->physicalProfile;
+
+        // Add active stories
+        $data['active_stories'] = $user->activeStories->map(function($story) {
+            return [
+                'id' => $story->id,
+                'media_url' => $story->media_url,
+                'media_type' => $story->type, // Using 'type' from database
+                'created_at' => $story->created_at,
+            ];
+        });
 
         // Add profile completion data for own profile
         if ($includePrivate) {

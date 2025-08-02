@@ -116,22 +116,35 @@ Route::prefix('v1')->group(function () {
         Route::get('/likes/received', [LikeController::class, 'getReceivedLikes']);
         Route::get('/likes/sent', [LikeController::class, 'getSentLikes']);
 
-        // Chat routes
+        // Chat routes with rate limiting
         Route::prefix('chats')->group(function () {
+            // General chat operations (moderate rate limiting)
             Route::get('/', [ChatController::class, 'getChats']);
-            Route::post('/create', [ChatController::class, 'createOrGetChat']);
             Route::get('/unread-count', [ChatController::class, 'getUnreadCount']);
             Route::get('/{id}', [ChatController::class, 'getChat']);
             Route::delete('/{id}', [ChatController::class, 'deleteChat']);
-            Route::post('/{id}/messages', [ChatController::class, 'sendMessage']);
-            Route::post('/{id}/read', [ChatController::class, 'markMessagesAsRead']);
-            Route::post('/{id}/messages/{message}/read', [ChatController::class, 'markMessagesAsRead']);
+            
+            // Chat creation (stricter rate limiting)
+            Route::post('/create', [ChatController::class, 'createOrGetChat'])
+                ->middleware('chat.rate.limit:create_chat');
+            
+            // Message sending (moderate rate limiting)
+            Route::post('/{id}/messages', [ChatController::class, 'sendMessage'])
+                ->middleware('chat.rate.limit:send_message');
+            
+            // Message reading (lenient rate limiting)
+            Route::post('/{id}/read', [ChatController::class, 'markMessagesAsRead'])
+                ->middleware('chat.rate.limit:mark_read');
+            Route::post('/{id}/messages/{message}/read', [ChatController::class, 'markMessagesAsRead'])
+                ->middleware('chat.rate.limit:mark_read');
 
-            // Message edit and delete routes
-            Route::put('/{chat_id}/messages/{message_id}', [ChatController::class, 'editMessage']);
-            Route::delete('/{chat_id}/messages/{message_id}', [ChatController::class, 'deleteMessage']);
+            // Message edit and delete routes (moderate rate limiting)
+            Route::put('/{chat_id}/messages/{message_id}', [ChatController::class, 'editMessage'])
+                ->middleware('chat.rate.limit:edit_message');
+            Route::delete('/{chat_id}/messages/{message_id}', [ChatController::class, 'deleteMessage'])
+                ->middleware('chat.rate.limit:delete_message');
 
-            // Call-related chat routes
+            // Call-related chat routes (general rate limiting)
             Route::get('/{id}/call-messages', [ChatController::class, 'getCallMessages']);
             Route::get('/{id}/call-statistics', [ChatController::class, 'getCallStatistics']);
         });

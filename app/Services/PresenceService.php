@@ -169,7 +169,7 @@ class PresenceService
     {
         $presenceData = [
             'id' => $user->id,
-            'name' => $user->full_name,
+            'name' => $user->getFullNameAttribute(),
             'email' => $user->email,
             'avatar' => $user->getProfilePhotoUrl(),
             'is_online' => true,
