@@ -7,8 +7,9 @@
 **A comprehensive Islamic dating and matchmaking platform emphasizing cultural values, family involvement, and serious relationships.**
 
 [![Laravel](https://img.shields.io/badge/Laravel-12-FF2D20?logo=laravel)](https://laravel.com)
-[![PHP](https://img.shields.io/badge/PHP-8.2%2B-777BB4?logo=php)](https://php.net)
-[![Livewire](https://img.shields.io/badge/Livewire-3.6-4E56A6?logo=livewire)](https://livewire.laravel.com)
+[![PHP](https://img.shields.io/badge/PHP-8.4-777BB4?logo=php)](https://php.net)
+[![React](https://img.shields.io/badge/React-18+-61DAFB?logo=react)](https://react.dev)
+[![Inertia.js](https://img.shields.io/badge/Inertia.js-1.0-9553E9?logo=inertia)](https://inertiajs.com)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 [Features](#features) • [Quick Start](#quick-start) • [Documentation](#documentation) • [Tech Stack](#tech-stack)
@@ -65,7 +66,7 @@ YorYor modernizes traditional matchmaking while respecting Islamic cultural and 
 ## 🚀 Quick Start
 
 ### Prerequisites
-- PHP 8.2 or higher
+- PHP 8.4 or higher
 - Composer
 - Node.js 18+ & npm
 - MySQL 8.0+ or SQLite (development)
@@ -109,7 +110,7 @@ Comprehensive documentation is available in the `/docs` folder:
 - [Mobile Integration](docs/api/MOBILE_INTEGRATION.md) - React Native/Expo guide
 
 ### 🌐 Web Documentation
-- [Livewire Components](docs/web/COMPONENTS.md) - 60+ components catalog
+- [React Components](docs/web/COMPONENTS.md) - Component catalog
 - [Frontend Architecture](docs/web/FRONTEND_ARCHITECTURE.md) - Structure & patterns
 - [Theming & Icons](docs/web/THEMING.md) - Dark mode & design system
 
@@ -141,7 +142,7 @@ Comprehensive documentation is available in the `/docs` folder:
 
 ### Backend
 - **Framework**: Laravel 12
-- **Language**: PHP 8.2+
+- **Language**: PHP 8.4+
 - **Authentication**: Laravel Sanctum
 - **Real-time**: Laravel Reverb (WebSocket)
 - **Database**: MySQL/PostgreSQL (production), SQLite (development)
@@ -149,10 +150,10 @@ Comprehensive documentation is available in the `/docs` folder:
 - **Storage**: Cloudflare R2 (S3-compatible)
 
 ### Frontend
-- **Framework**: Livewire 3.6 (Full-stack reactive)
-- **UI Library**: Livewire Flux 2.1 (Premium components)
+- **Framework**: React 18+ with Inertia.js 1.0
+- **UI Library**: Custom React components with Tailwind CSS
 - **CSS**: Tailwind CSS 4.0
-- **JavaScript**: Alpine.js 3.14
+- **JavaScript**: React 18+, Axios for HTTP requests
 - **Icons**: Lucide Icons
 - **Build Tool**: Vite 6.0
 
@@ -175,7 +176,7 @@ Comprehensive documentation is available in the `/docs` folder:
 
 - **70+ Database Tables**: Comprehensive data model
 - **100+ API Endpoints**: RESTful API with JSON:API format
-- **60+ Livewire Components**: Full-stack reactive components
+- **React Components**: Modern, reusable component library
 - **25+ Service Classes**: Clean business logic layer
 - **55+ Eloquent Models**: Rich domain models
 - **15+ Rate Limit Types**: Granular rate limiting
@@ -251,7 +252,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 🙏 Acknowledgments
 
 - [Laravel](https://laravel.com) - The PHP framework
-- [Livewire](https://livewire.laravel.com) - Full-stack framework for Laravel
+- [Inertia.js](https://inertiajs.com) - Modern monolith approach
+- [React](https://react.dev) - UI library
 - [Tailwind CSS](https://tailwindcss.com) - Utility-first CSS framework
 - [VideoSDK](https://videosdk.live) - Video calling infrastructure
 - [Cloudflare R2](https://www.cloudflare.com/products/r2/) - Object storage
