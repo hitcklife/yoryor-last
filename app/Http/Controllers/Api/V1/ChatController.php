@@ -158,24 +158,9 @@ class ChatController extends Controller
                     ->orderBy('last_activity_at', 'desc')
                     ->paginate($perPage);
 
-                // Transform the chats to include the other user and add read status to last message
-                $chats->getCollection()->transform(function ($chat) use ($user) {
-                    // Get the other user from the eager loaded relationship
-                    $otherUser = $chat->users->first();
-                    $chat->other_user = $otherUser;
-
-                    // Add read status to last message if it exists
-                    if ($chat->lastMessage) {
-                        $readStatus = $chat->lastMessage->getReadStatusFor($user);
-                        $chat->lastMessage->is_mine = $readStatus['is_mine'];
-                        $chat->lastMessage->is_read = $readStatus['is_read'];
-                        $chat->lastMessage->read_at = $readStatus['read_at'];
-                    }
-
-                    // Remove the users collection to clean up the response
-                    unset($chat->users);
-
-                    return $chat;
+                // Transform using ChatResource
+                $chats->getCollection()->transform(function ($chat) {
+                    return new \App\Http\Resources\Api\V1\ChatResource($chat);
                 });
 
                 return ErrorHandlingService::paginatedResponse($chats, 'chats');
@@ -269,13 +254,6 @@ class ChatController extends Controller
                       ->with(['profile:id,user_id,first_name,last_name', 'profilePhoto:id,user_id,original_url,thumbnail_url,medium_url,is_profile_photo']);
             }])->findOrFail($id);
 
-            // Get the other user from the chat
-            $otherUser = $chat->users->first();
-            $chat->other_user = $otherUser;
-
-            // Clean up the response by removing the users collection
-            unset($chat->users);
-
             // Build messages query with optimized loading
             $messagesQuery = $chat->messages()
                 ->with([
@@ -297,60 +275,15 @@ class ChatController extends Controller
             // Get paginated messages
             $messages = $messagesQuery->paginate($perPage);
 
-            // Transform messages with read status and enhanced call data
-            $transformedMessages = $messages->getCollection()->map(function ($message) use ($user, $includeCallData) {
-                $readStatus = $message->getReadStatusFor($user);
-                $messageData = [
-                    'id' => $message->id,
-                    'chat_id' => $message->chat_id,
-                    'sender_id' => $message->sender_id,
-                    'content' => $message->content,
-                    'message_type' => $message->message_type,
-                    'media_url' => $message->media_url,
-                    'thumbnail_url' => $message->thumbnail_url,
-                    'media_data' => $message->media_data,
-                    'reply_to_message_id' => $message->reply_to_message_id,
-                    'is_edited' => $message->is_edited,
-                    'edited_at' => $message->edited_at,
-                    'sent_at' => $message->sent_at,
-                    'is_read' => $readStatus['is_read'],
-                    'read_at' => $readStatus['read_at'],
-                    'is_mine' => $readStatus['is_mine'],
-                    'sender' => $message->sender,
-                    'reply_to' => $message->replyTo
-                ];
-
-                // Add enhanced call data if it's a call message
-                if ($message->isCallMessage() && $includeCallData && $message->call) {
-                    $messageData['call_details'] = [
-                        'call_id' => $message->call->id,
-                        'type' => $message->call->type,
-                        'status' => $message->call->status,
-                        'duration_seconds' => $message->call->getDurationInSeconds(),
-                        'formatted_duration' => $message->call->getFormattedDuration(),
-                        'started_at' => $message->call->started_at,
-                        'ended_at' => $message->call->ended_at,
-                        'is_active' => $message->call->isActive(),
-                        'other_participant' => $message->call->getOtherParticipant($user)
-                    ];
-                }
-
-                return $messageData;
+            // Transform using resources
+            $transformedMessages = $messages->getCollection()->map(function ($message) {
+                return new \App\Http\Resources\Api\V1\MessageResource($message);
             });
 
             return response()->json([
                 'status' => 'success',
                 'data' => [
-                    'chat' => [
-                        'id' => $chat->id,
-                        'type' => $chat->type,
-                        'name' => $chat->name,
-                        'is_active' => $chat->is_active,
-                        'created_at' => $chat->created_at,
-                        'updated_at' => $chat->updated_at,
-                        'last_activity_at' => $chat->last_activity_at,
-                        'other_user' => $chat->other_user
-                    ],
+                    'chat' => new \App\Http\Resources\Api\V1\ChatResource($chat),
                     'messages' => [
                         'data' => $transformedMessages,
                         'pagination' => [
