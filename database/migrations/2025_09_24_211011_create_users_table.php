@@ -18,7 +18,7 @@ return new class extends Migration
             // Authentication fields
             $table->string('email', 255)->unique()->nullable();
             $table->string('phone', 20)->unique()->nullable();
-            $table->string('password', 60)->nullable(); // Nullable for social login
+            $table->string('password')->nullable(); // Nullable for social login, 255 for future-proofing
             $table->string('remember_token')->nullable();
 
             // Verification fields

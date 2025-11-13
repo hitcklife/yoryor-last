@@ -2,15 +2,13 @@
 
 namespace App\Services;
 
-use App\Models\User;
-use App\Models\EnhancedUserReport;
-use App\Models\ReportEvidence;
-use App\Models\UserSafetyScore;
 use App\Models\AutomatedSafetyFlag;
+use App\Models\ReportEvidence;
+use App\Models\User;
+use App\Models\UserReport;
+use App\Models\UserSafetyScore;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
-use Carbon\Carbon;
 
 class EnhancedReportingService
 {
@@ -57,7 +55,7 @@ class EnhancedReportingService
                 $severity = $this->determineSeverity($category, $subcategory);
 
                 // Create the report
-                $report = EnhancedUserReport::create([
+                $report = UserReport::create([
                     'reporter_id' => $reporter->id,
                     'reported_user_id' => $reportedUser->id,
                     'category' => $category,
@@ -113,7 +111,7 @@ class EnhancedReportingService
      * Review a report
      */
     public function reviewReport(
-        EnhancedUserReport $report,
+        UserReport $report,
         User $reviewer,
         string $action,
         array $actionDetails = []
@@ -127,14 +125,14 @@ class EnhancedReportingService
                             $actionDetails['actions_taken'] ?? [],
                             $actionDetails['notes'] ?? null
                         );
-                        
+
                         // Apply actions to reported user
                         $this->applyReportActions($report, $actionDetails['actions_taken'] ?? []);
                         break;
 
                     case 'dismiss':
                         $report->markDismissed($reviewer, $actionDetails['reason'] ?? 'No violation found');
-                        
+
                         // Record false report if dismissed
                         $this->recordFalseReport($report);
                         break;
@@ -178,11 +176,11 @@ class EnhancedReportingService
         $lastMonth = now()->subMonth();
 
         return [
-            'pending_reports' => EnhancedUserReport::pending()->count(),
-            'high_priority_reports' => EnhancedUserReport::highPriority()->pending()->count(),
-            'reports_today' => EnhancedUserReport::where('created_at', '>=', $today)->count(),
-            'reports_this_week' => EnhancedUserReport::where('created_at', '>=', $lastWeek)->count(),
-            'reports_this_month' => EnhancedUserReport::where('created_at', '>=', $lastMonth)->count(),
+            'pending_reports' => UserReport::pending()->count(),
+            'high_priority_reports' => UserReport::highPriority()->pending()->count(),
+            'reports_today' => UserReport::where('created_at', '>=', $today)->count(),
+            'reports_this_week' => UserReport::where('created_at', '>=', $lastWeek)->count(),
+            'reports_this_month' => UserReport::where('created_at', '>=', $lastMonth)->count(),
             'category_breakdown' => $this->getCategoryBreakdown(),
             'severity_breakdown' => $this->getSeverityBreakdown(),
             'high_risk_users' => $this->getHighRiskUsers(),
@@ -196,7 +194,7 @@ class EnhancedReportingService
     public function getUserSafetyOverview(User $user): array
     {
         $safetyScore = $this->getOrCreateSafetyScore($user);
-        $recentReports = EnhancedUserReport::where('reported_user_id', $user->id)
+        $recentReports = UserReport::where('reported_user_id', $user->id)
             ->recent()
             ->with(['reporter', 'reviewedBy'])
             ->get();
@@ -261,7 +259,7 @@ class EnhancedReportingService
     /**
      * Store report evidence
      */
-    private function storeReportEvidence(EnhancedUserReport $report, array $evidence): void
+    private function storeReportEvidence(UserReport $report, array $evidence): void
     {
         foreach ($evidence as $evidenceData) {
             if (isset($evidenceData['file']) && $evidenceData['file']->isValid()) {
@@ -285,10 +283,10 @@ class EnhancedReportingService
     /**
      * Update user safety score
      */
-    private function updateUserSafetyScore(User $user, EnhancedUserReport $report): void
+    private function updateUserSafetyScore(User $user, UserReport $report): void
     {
         $safetyScore = $this->getOrCreateSafetyScore($user);
-        
+
         if ($report->status === 'resolved') {
             $safetyScore->recordReport(true);
         } elseif ($report->status === 'pending') {
@@ -345,7 +343,7 @@ class EnhancedReportingService
      */
     private function isSpamReporting(User $reporter, User $reportedUser): bool
     {
-        $recentReports = EnhancedUserReport::where('reporter_id', $reporter->id)
+        $recentReports = UserReport::where('reporter_id', $reporter->id)
             ->where('reported_user_id', $reportedUser->id)
             ->where('created_at', '>', now()->subDays(7))
             ->count();
@@ -356,7 +354,7 @@ class EnhancedReportingService
     /**
      * Auto-escalate critical reports
      */
-    private function autoEscalateReport(EnhancedUserReport $report): void
+    private function autoEscalateReport(UserReport $report): void
     {
         $report->update([
             'status' => 'escalated',
@@ -367,7 +365,7 @@ class EnhancedReportingService
     /**
      * Apply actions to reported user
      */
-    private function applyReportActions(EnhancedUserReport $report, array $actions): void
+    private function applyReportActions(UserReport $report, array $actions): void
     {
         $user = $report->reportedUser;
 
@@ -399,13 +397,13 @@ class EnhancedReportingService
     /**
      * Send report notifications
      */
-    private function sendReportNotifications(EnhancedUserReport $report): void
+    private function sendReportNotifications(UserReport $report): void
     {
         // Notify admins of new report
         $this->notificationService->notifyAdminsOfNewReport($report);
 
         // Notify reporter of submission
-        if (!$report->is_anonymous) {
+        if (! $report->is_anonymous) {
             $this->notificationService->notifyReporterOfSubmission($report->reporter, $report);
         }
     }
@@ -413,9 +411,9 @@ class EnhancedReportingService
     /**
      * Send review notifications
      */
-    private function sendReviewNotifications(EnhancedUserReport $report, string $action): void
+    private function sendReviewNotifications(UserReport $report, string $action): void
     {
-        if (!$report->is_anonymous) {
+        if (! $report->is_anonymous) {
             $this->notificationService->notifyReporterOfReview($report->reporter, $report, $action);
         }
 
@@ -427,7 +425,7 @@ class EnhancedReportingService
     /**
      * Record false report
      */
-    private function recordFalseReport(EnhancedUserReport $report): void
+    private function recordFalseReport(UserReport $report): void
     {
         $reporterSafetyScore = $this->getOrCreateSafetyScore($report->reporter);
         $reporterSafetyScore->recordFalseReport();
@@ -438,7 +436,7 @@ class EnhancedReportingService
      */
     private function getCategoryBreakdown(): array
     {
-        return EnhancedUserReport::recent()
+        return UserReport::recent()
             ->groupBy('category')
             ->selectRaw('category, COUNT(*) as count')
             ->pluck('count', 'category')
@@ -450,7 +448,7 @@ class EnhancedReportingService
      */
     private function getSeverityBreakdown(): array
     {
-        return EnhancedUserReport::recent()
+        return UserReport::recent()
             ->groupBy('severity')
             ->selectRaw('severity, COUNT(*) as count')
             ->pluck('count', 'severity')
@@ -478,12 +476,12 @@ class EnhancedReportingService
         $lastWeek = now()->subWeek();
         $twoWeeksAgo = now()->subWeeks(2);
 
-        $currentWeek = EnhancedUserReport::where('created_at', '>=', $lastWeek)
+        $currentWeek = UserReport::where('created_at', '>=', $lastWeek)
             ->groupBy('category')
             ->selectRaw('category, COUNT(*) as count')
             ->pluck('count', 'category');
 
-        $previousWeek = EnhancedUserReport::whereBetween('created_at', [$twoWeeksAgo, $lastWeek])
+        $previousWeek = UserReport::whereBetween('created_at', [$twoWeeksAgo, $lastWeek])
             ->groupBy('category')
             ->selectRaw('category, COUNT(*) as count')
             ->pluck('count', 'category');
@@ -492,7 +490,7 @@ class EnhancedReportingService
         foreach ($currentWeek as $category => $currentCount) {
             $previousCount = $previousWeek[$category] ?? 0;
             $change = $previousCount > 0 ? (($currentCount - $previousCount) / $previousCount) * 100 : 100;
-            
+
             $trends[] = [
                 'category' => $category,
                 'current_count' => $currentCount,
@@ -503,7 +501,7 @@ class EnhancedReportingService
         }
 
         // Sort by change percentage
-        usort($trends, fn($a, $b) => $b['change_percentage'] <=> $a['change_percentage']);
+        usort($trends, fn ($a, $b) => $b['change_percentage'] <=> $a['change_percentage']);
 
         return array_slice($trends, 0, 5);
     }
@@ -524,7 +522,7 @@ class EnhancedReportingService
     {
         $restrictions = $user->safety_restrictions ?? [];
         $restrictions['messaging_restricted_until'] = now()->addHours($hours)->toISOString();
-        
+
         $user->update(['safety_restrictions' => $restrictions]);
     }
 
@@ -535,7 +533,7 @@ class EnhancedReportingService
     {
         $restrictions = $user->safety_restrictions ?? [];
         $restrictions['photo_upload_restricted_until'] = now()->addHours($hours)->toISOString();
-        
+
         $user->update(['safety_restrictions' => $restrictions]);
     }
 
@@ -548,8 +546,8 @@ class EnhancedReportingService
             'account_status' => 'suspended',
             'safety_restrictions' => [
                 'suspended_until' => now()->addHours($hours)->toISOString(),
-                'reason' => 'Account suspended due to community guidelines violation'
-            ]
+                'reason' => 'Account suspended due to community guidelines violation',
+            ],
         ]);
     }
 
@@ -562,8 +560,8 @@ class EnhancedReportingService
             'account_status' => 'banned',
             'safety_restrictions' => [
                 'banned_at' => now()->toISOString(),
-                'reason' => $reason
-            ]
+                'reason' => $reason,
+            ],
         ]);
     }
 }

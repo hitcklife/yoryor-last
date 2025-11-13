@@ -11,7 +11,7 @@ return new class extends Migration
      */
     public function up(): void
     {
-                Schema::create('user_blocks', function (Blueprint $table) {
+        Schema::create('user_blocks', function (Blueprint $table) {
             $table->id();
 
             // Block participants
@@ -21,6 +21,7 @@ return new class extends Migration
             // Block details
             $table->string('reason')->nullable();
 
+            $table->softDeletes();
             $table->timestamps();
 
             // Ensure unique blocks

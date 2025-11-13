@@ -11,7 +11,7 @@ return new class extends Migration
      */
     public function up(): void
     {
-                Schema::create('matches', function (Blueprint $table) {
+        Schema::create('matches', function (Blueprint $table) {
             $table->id();
 
             // Match participants
@@ -21,6 +21,7 @@ return new class extends Migration
             // Match details
             $table->timestamp('matched_at')->default(now());
 
+            $table->softDeletes();
             $table->timestamps();
 
             // Indexes for performance

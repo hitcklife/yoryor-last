@@ -2,13 +2,12 @@
 
 namespace Tests\Feature\Api\V1;
 
+use App\Models\Story;
 use App\Models\User;
 use App\Models\UserPhoto;
-use App\Models\Story;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Laravel\Sanctum\Sanctum;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use Laravel\Sanctum\Sanctum;
 
 uses(RefreshDatabase::class);
 
@@ -31,7 +30,7 @@ describe('Media and Photo Management', function () {
                         'thumbnail_url' => "https://cdn.yoryor.app/photos/{$this->user->id}/{$i}_thumb.jpg",
                         'is_profile_photo' => $i === 0,
                         'order' => $i + 1,
-                        'status' => $i < 3 ? 'approved' : 'pending'
+                        'status' => $i < 3 ? 'approved' : 'pending',
                     ]);
                     $this->photos->push($photo);
                 }
@@ -52,9 +51,9 @@ describe('Media and Photo Management', function () {
                                 'is_profile_photo',
                                 'order',
                                 'status',
-                                'uploaded_at'
-                            ]
-                        ]
+                                'uploaded_at',
+                            ],
+                        ],
                     ]);
 
                 expect(count($response->json('data')))->toBe(5);
@@ -80,10 +79,10 @@ describe('Media and Photo Management', function () {
         describe('POST /api/v1/photos/upload', function () {
             it('uploads photo successfully', function () {
                 $photo = \Illuminate\Http\UploadedFile::fake()->image('photo.jpg');
-                
+
                 $response = $this->postJson('/api/v1/photos/upload', [
                     'photo' => $photo,
-                    'is_profile_photo' => false
+                    'is_profile_photo' => false,
                 ]);
 
                 $response->assertStatus(200)
@@ -96,22 +95,22 @@ describe('Media and Photo Management', function () {
                             'thumbnail_url',
                             'is_profile_photo',
                             'order',
-                            'status'
-                        ]
+                            'status',
+                        ],
                     ])
                     ->assertJson([
                         'status' => 'success',
                         'message' => 'Photo uploaded successfully',
                         'data' => [
                             'is_profile_photo' => false,
-                            'status' => 'pending'
-                        ]
+                            'status' => 'pending',
+                        ],
                     ]);
 
                 $this->assertDatabaseHas('user_photos', [
                     'user_id' => $this->user->id,
                     'is_profile_photo' => false,
-                    'status' => 'pending'
+                    'status' => 'pending',
                 ]);
             });
 
@@ -121,36 +120,36 @@ describe('Media and Photo Management', function () {
                     'user_id' => $this->user->id,
                     'original_url' => 'https://cdn.yoryor.app/photos/old.jpg',
                     'is_profile_photo' => true,
-                    'order' => 1
+                    'order' => 1,
                 ]);
 
                 $photo = \Illuminate\Http\UploadedFile::fake()->image('photo.jpg');
-                
+
                 $response = $this->postJson('/api/v1/photos/upload', [
                     'photo' => $photo,
-                    'is_profile_photo' => true
+                    'is_profile_photo' => true,
                 ]);
 
                 $response->assertStatus(200)
                     ->assertJson([
                         'data' => [
                             'is_profile_photo' => true,
-                            'order' => 1
-                        ]
+                            'order' => 1,
+                        ],
                     ]);
 
                 // Check old profile photo is no longer profile photo
                 $this->assertDatabaseHas('user_photos', [
                     'user_id' => $this->user->id,
                     'original_url' => 'https://cdn.yoryor.app/photos/old.jpg',
-                    'is_profile_photo' => false
+                    'is_profile_photo' => false,
                 ]);
             });
 
             it('validates photo format', function () {
                 $response = $this->postJson('/api/v1/photos/upload', [
                     'photo' => 'not-a-valid-base64-image',
-                    'is_profile_photo' => false
+                    'is_profile_photo' => false,
                 ]);
 
                 $this->assertValidationError($response, ['photo']);
@@ -162,13 +161,13 @@ describe('Media and Photo Management', function () {
                     UserPhoto::create([
                         'user_id' => $this->user->id,
                         'original_url' => "https://cdn.yoryor.app/photos/{$i}.jpg",
-                        'order' => $i + 1
+                        'order' => $i + 1,
                     ]);
                 }
 
                 $response = $this->postJson('/api/v1/photos/upload', [
                     'photo' => 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAAAAAAAD/2wBD',
-                    'is_profile_photo' => false
+                    'is_profile_photo' => false,
                 ]);
 
                 $this->assertApiError($response, 'FORBIDDEN', 403);
@@ -179,14 +178,14 @@ describe('Media and Photo Management', function () {
                 for ($i = 0; $i < 10; $i++) {
                     $this->postJson('/api/v1/photos/upload', [
                         'photo' => 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAAAAAAAD/2wBD',
-                        'is_profile_photo' => false
+                        'is_profile_photo' => false,
                     ]);
                 }
 
                 // The 11th request should be rate limited
                 $response = $this->postJson('/api/v1/photos/upload', [
                     'photo' => 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAAAAAAAD/2wBD',
-                    'is_profile_photo' => false
+                    'is_profile_photo' => false,
                 ]);
 
                 $response->assertStatus(429);
@@ -199,26 +198,26 @@ describe('Media and Photo Management', function () {
                     'user_id' => $this->user->id,
                     'original_url' => 'https://cdn.yoryor.app/photos/test.jpg',
                     'is_profile_photo' => false,
-                    'order' => 2
+                    'order' => 2,
                 ]);
             });
 
             it('updates photo successfully', function () {
                 $response = $this->putJson("/api/v1/photos/{$this->photo->id}", [
                     'is_profile_photo' => true,
-                    'order' => 1
+                    'order' => 1,
                 ]);
 
                 $response->assertStatus(200)
                     ->assertJson([
                         'status' => 'success',
-                        'message' => 'Photo updated successfully'
+                        'message' => 'Photo updated successfully',
                     ]);
 
                 $this->assertDatabaseHas('user_photos', [
                     'id' => $this->photo->id,
                     'is_profile_photo' => true,
-                    'order' => 1
+                    'order' => 1,
                 ]);
             });
 
@@ -226,11 +225,11 @@ describe('Media and Photo Management', function () {
                 $otherUserPhoto = UserPhoto::create([
                     'user_id' => $this->createUserWithCompleteProfile()->id,
                     'original_url' => 'https://cdn.yoryor.app/photos/other.jpg',
-                    'order' => 1
+                    'order' => 1,
                 ]);
 
                 $response = $this->putJson("/api/v1/photos/{$otherUserPhoto->id}", [
-                    'order' => 5
+                    'order' => 5,
                 ]);
 
                 $this->assertApiError($response, 'FORBIDDEN', 403);
@@ -242,11 +241,11 @@ describe('Media and Photo Management', function () {
                     'user_id' => $this->user->id,
                     'original_url' => 'https://cdn.yoryor.app/photos/current.jpg',
                     'is_profile_photo' => true,
-                    'order' => 1
+                    'order' => 1,
                 ]);
 
                 $response = $this->putJson("/api/v1/photos/{$this->photo->id}", [
-                    'is_profile_photo' => true
+                    'is_profile_photo' => true,
                 ]);
 
                 $response->assertStatus(200);
@@ -254,14 +253,14 @@ describe('Media and Photo Management', function () {
                 // Check old profile photo is no longer profile photo
                 $this->assertDatabaseHas('user_photos', [
                     'id' => $currentProfilePhoto->id,
-                    'is_profile_photo' => false
+                    'is_profile_photo' => false,
                 ]);
 
                 // Check new profile photo has order 1
                 $this->assertDatabaseHas('user_photos', [
                     'id' => $this->photo->id,
                     'is_profile_photo' => true,
-                    'order' => 1
+                    'order' => 1,
                 ]);
             });
         });
@@ -272,7 +271,7 @@ describe('Media and Photo Management', function () {
                     'user_id' => $this->user->id,
                     'original_url' => 'https://cdn.yoryor.app/photos/test.jpg',
                     'is_profile_photo' => false,
-                    'order' => 2
+                    'order' => 2,
                 ]);
             });
 
@@ -282,11 +281,11 @@ describe('Media and Photo Management', function () {
                 $response->assertStatus(200)
                     ->assertJson([
                         'status' => 'success',
-                        'message' => 'Photo deleted successfully'
+                        'message' => 'Photo deleted successfully',
                     ]);
 
                 $this->assertDatabaseMissing('user_photos', [
-                    'id' => $this->photo->id
+                    'id' => $this->photo->id,
                 ]);
             });
 
@@ -295,7 +294,7 @@ describe('Media and Photo Management', function () {
                     'user_id' => $this->user->id,
                     'original_url' => 'https://cdn.yoryor.app/photos/profile.jpg',
                     'is_profile_photo' => true,
-                    'order' => 1
+                    'order' => 1,
                 ]);
 
                 $response = $this->deleteJson("/api/v1/photos/{$profilePhoto->id}");
@@ -318,7 +317,7 @@ describe('Media and Photo Management', function () {
                 $otherUserPhoto = UserPhoto::create([
                     'user_id' => $this->createUserWithCompleteProfile()->id,
                     'original_url' => 'https://cdn.yoryor.app/photos/other.jpg',
-                    'order' => 1
+                    'order' => 1,
                 ]);
 
                 $response = $this->deleteJson("/api/v1/photos/{$otherUserPhoto->id}");
@@ -334,7 +333,7 @@ describe('Media and Photo Management', function () {
                         $photos->push(UserPhoto::create([
                             'user_id' => $this->user->id,
                             'original_url' => "https://cdn.yoryor.app/photos/test{$i}.jpg",
-                            'order' => $i
+                            'order' => $i,
                         ]));
                     }
                 }
@@ -368,7 +367,7 @@ describe('Media and Photo Management', function () {
                         'caption' => "Story caption $i",
                         'created_at' => now()->subHours($i),
                         'expires_at' => now()->addHours(24 - $i),
-                        'view_count' => $i * 10
+                        'view_count' => $i * 10,
                     ]);
                     $this->stories->push($story);
                 }
@@ -388,9 +387,9 @@ describe('Media and Photo Management', function () {
                                 'caption',
                                 'created_at',
                                 'expires_at',
-                                'view_count'
-                            ]
-                        ]
+                                'view_count',
+                            ],
+                        ],
                     ]);
 
                 expect(count($response->json('data')))->toBe(3);
@@ -403,7 +402,7 @@ describe('Media and Photo Management', function () {
                     'media_url' => 'https://cdn.yoryor.app/stories/expired.jpg',
                     'media_type' => 'image',
                     'created_at' => now()->subHours(25),
-                    'expires_at' => now()->subHour()
+                    'expires_at' => now()->subHour(),
                 ]);
 
                 $response = $this->getJson('/api/v1/stories');
@@ -425,7 +424,7 @@ describe('Media and Photo Management', function () {
                 $response = $this->postJson('/api/v1/stories', [
                     'media' => 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAAAAAAAD/2wBD',
                     'media_type' => 'image',
-                    'caption' => 'Beautiful sunset today!'
+                    'caption' => 'Beautiful sunset today!',
                 ]);
 
                 $response->assertStatus(200)
@@ -438,22 +437,22 @@ describe('Media and Photo Management', function () {
                             'media_type',
                             'caption',
                             'created_at',
-                            'expires_at'
-                        ]
+                            'expires_at',
+                        ],
                     ])
                     ->assertJson([
                         'status' => 'success',
                         'message' => 'Story created successfully',
                         'data' => [
                             'media_type' => 'image',
-                            'caption' => 'Beautiful sunset today!'
-                        ]
+                            'caption' => 'Beautiful sunset today!',
+                        ],
                     ]);
 
                 $this->assertDatabaseHas('stories', [
                     'user_id' => $this->user->id,
                     'media_type' => 'image',
-                    'caption' => 'Beautiful sunset today!'
+                    'caption' => 'Beautiful sunset today!',
                 ]);
             });
 
@@ -461,15 +460,15 @@ describe('Media and Photo Management', function () {
                 $response = $this->postJson('/api/v1/stories', [
                     'media' => 'data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW',
                     'media_type' => 'video',
-                    'caption' => 'Check out this video!'
+                    'caption' => 'Check out this video!',
                 ]);
 
                 $response->assertStatus(200)
                     ->assertJson([
                         'data' => [
                             'media_type' => 'video',
-                            'caption' => 'Check out this video!'
-                        ]
+                            'caption' => 'Check out this video!',
+                        ],
                     ]);
             });
 
@@ -477,7 +476,7 @@ describe('Media and Photo Management', function () {
                 $response = $this->postJson('/api/v1/stories', [
                     'media' => 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAAAAAAAD/2wBD',
                     'media_type' => 'invalid',
-                    'caption' => 'Test'
+                    'caption' => 'Test',
                 ]);
 
                 $this->assertValidationError($response, ['media_type']);
@@ -487,7 +486,7 @@ describe('Media and Photo Management', function () {
                 $response = $this->postJson('/api/v1/stories', [
                     'media' => 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAAAAAAAD/2wBD',
                     'media_type' => 'image',
-                    'caption' => str_repeat('a', 501) // Assuming 500 is the limit
+                    'caption' => str_repeat('a', 501), // Assuming 500 is the limit
                 ]);
 
                 $this->assertValidationError($response, ['caption']);
@@ -501,14 +500,14 @@ describe('Media and Photo Management', function () {
                         'media_url' => "https://cdn.yoryor.app/stories/{$i}.jpg",
                         'media_type' => 'image',
                         'created_at' => now(),
-                        'expires_at' => now()->addHours(24)
+                        'expires_at' => now()->addHours(24),
                     ]);
                 }
 
                 $response = $this->postJson('/api/v1/stories', [
                     'media' => 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAAAAAAAD/2wBD',
                     'media_type' => 'image',
-                    'caption' => 'One too many'
+                    'caption' => 'One too many',
                 ]);
 
                 $this->assertApiError($response, 'FORBIDDEN', 403);
@@ -520,7 +519,7 @@ describe('Media and Photo Management', function () {
                     $this->postJson('/api/v1/stories', [
                         'media' => 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAAAAAAAD/2wBD',
                         'media_type' => 'image',
-                        'caption' => "Story $i"
+                        'caption' => "Story $i",
                     ]);
                 }
 
@@ -528,7 +527,7 @@ describe('Media and Photo Management', function () {
                 $response = $this->postJson('/api/v1/stories', [
                     'media' => 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAAAAAAAD/2wBD',
                     'media_type' => 'image',
-                    'caption' => 'Rate limited'
+                    'caption' => 'Rate limited',
                 ]);
 
                 $response->assertStatus(429);
@@ -543,7 +542,7 @@ describe('Media and Photo Management', function () {
                     'media_type' => 'image',
                     'caption' => 'Test story',
                     'created_at' => now(),
-                    'expires_at' => now()->addHours(24)
+                    'expires_at' => now()->addHours(24),
                 ]);
             });
 
@@ -553,11 +552,11 @@ describe('Media and Photo Management', function () {
                 $response->assertStatus(200)
                     ->assertJson([
                         'status' => 'success',
-                        'message' => 'Story deleted successfully'
+                        'message' => 'Story deleted successfully',
                     ]);
 
                 $this->assertDatabaseMissing('stories', [
-                    'id' => $this->story->id
+                    'id' => $this->story->id,
                 ]);
             });
 
@@ -567,7 +566,7 @@ describe('Media and Photo Management', function () {
                     'media_url' => 'https://cdn.yoryor.app/stories/other.jpg',
                     'media_type' => 'image',
                     'created_at' => now(),
-                    'expires_at' => now()->addHours(24)
+                    'expires_at' => now()->addHours(24),
                 ]);
 
                 $response = $this->deleteJson("/api/v1/stories/{$otherUserStory->id}");
@@ -586,17 +585,17 @@ describe('Media and Photo Management', function () {
             beforeEach(function () {
                 // Create matched users with stories
                 $this->matchedUsersWithStories = collect();
-                
+
                 for ($i = 0; $i < 3; $i++) {
                     $matchedUser = $this->createUserWithCompleteProfile();
-                    
+
                     // Create match
-                    \App\Models\Match::create([
-                        'user1_id' => min($this->user->id, $matchedUser->id),
-                        'user2_id' => max($this->user->id, $matchedUser->id),
-                        'matched_at' => now()
+                    \App\Models\UserMatch::create([
+                        'user_id' => $this->user->id,
+                        'matched_user_id' => $matchedUser->id,
+                        'matched_at' => now(),
                     ]);
-                    
+
                     // Create stories for matched user
                     $stories = collect();
                     for ($j = 0; $j < 2; $j++) {
@@ -606,14 +605,14 @@ describe('Media and Photo Management', function () {
                             'media_type' => 'image',
                             'created_at' => now()->subHours($j),
                             'expires_at' => now()->addHours(24 - $j),
-                            'viewed_by' => $j === 0 ? [] : [$this->user->id] // First story unviewed
+                            'viewed_by' => $j === 0 ? [] : [$this->user->id], // First story unviewed
                         ]);
                         $stories->push($story);
                     }
-                    
+
                     $this->matchedUsersWithStories->push([
                         'user' => $matchedUser,
-                        'stories' => $stories
+                        'stories' => $stories,
                     ]);
                 }
             });
@@ -629,19 +628,19 @@ describe('Media and Photo Management', function () {
                                 'user' => [
                                     'id',
                                     'first_name',
-                                    'profile_photo_url'
+                                    'profile_photo_url',
                                 ],
                                 'stories' => [
                                     '*' => [
                                         'id',
                                         'media_url',
                                         'media_type',
-                                        'created_at'
-                                    ]
+                                        'created_at',
+                                    ],
                                 ],
-                                'unviewed_count'
-                            ]
-                        ]
+                                'unviewed_count',
+                            ],
+                        ],
                     ]);
 
                 expect(count($response->json('data')))->toBe(3);
@@ -657,18 +656,18 @@ describe('Media and Photo Management', function () {
             it('excludes expired stories', function () {
                 // Create user with expired story
                 $userWithExpiredStory = $this->createUserWithCompleteProfile();
-                \App\Models\Match::create([
-                    'user1_id' => min($this->user->id, $userWithExpiredStory->id),
-                    'user2_id' => max($this->user->id, $userWithExpiredStory->id),
-                    'matched_at' => now()
+                \App\Models\UserMatch::create([
+                    'user_id' => $this->user->id,
+                    'matched_user_id' => $userWithExpiredStory->id,
+                    'matched_at' => now(),
                 ]);
-                
+
                 Story::create([
                     'user_id' => $userWithExpiredStory->id,
                     'media_url' => 'https://cdn.yoryor.app/stories/expired.jpg',
                     'media_type' => 'image',
                     'created_at' => now()->subHours(25),
-                    'expires_at' => now()->subHour()
+                    'expires_at' => now()->subHour(),
                 ]);
 
                 $response = $this->getJson('/api/v1/stories/matches');
@@ -682,7 +681,7 @@ describe('Media and Photo Management', function () {
                 $response = $this->getJson('/api/v1/stories/matches');
 
                 $userData = collect($response->json('data'));
-                
+
                 // Check that users are ordered by their most recent story
                 $previousTime = now()->addDay();
                 foreach ($userData as $user) {

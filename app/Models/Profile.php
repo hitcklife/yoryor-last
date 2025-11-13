@@ -5,10 +5,11 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Profile extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
     protected $fillable = [
         'user_id',
@@ -31,7 +32,7 @@ class Profile extends Model
         'interests',
         'looking_for_relationship',
         'profile_views',
-        'profile_completed_at'
+        'profile_completed_at',
     ];
 
     /**
@@ -47,7 +48,7 @@ class Profile extends Model
         'age' => 'integer',
         'profile_views' => 'integer',
         'profile_completed_at' => 'datetime',
-        'looking_for_relationship' => 'string'
+        'looking_for_relationship' => 'string',
     ];
 
     public function user(): BelongsTo
@@ -65,20 +66,19 @@ class Profile extends Model
         // Use the country relationship if country_id exists
         if ($this->country_id) {
             // Try to load the relationship if not already loaded
-            if (!$this->relationLoaded('country')) {
+            if (! $this->relationLoaded('country')) {
                 try {
                     $this->load('country');
                 } catch (\Exception $e) {
                     // Fallback if relationship loading fails
                 }
             }
-            
+
             if ($this->relationLoaded('country') && $this->country) {
                 return $this->country->name;
             }
         }
-        
+
         return null;
     }
-
 }

@@ -11,13 +11,17 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create("permission_user", function (Blueprint $table) {
+        Schema::create('permission_user', function (Blueprint $table) {
             $table->id();
-            $table->foreignId("permission_id")->constrained()->onDelete("cascade");
-            $table->foreignId("user_id")->constrained()->onDelete("cascade");
+            $table->foreignId('permission_id')->constrained()->onDelete('cascade');
+            $table->foreignId('user_id')->constrained()->onDelete('cascade');
             $table->timestamps();
-            
-            $table->unique(["permission_id", "user_id"]);
+
+            $table->unique(['permission_id', 'user_id']);
+
+            // Indexes for reverse lookups
+            $table->index('user_id');
+            $table->index('permission_id');
         });
     }
 

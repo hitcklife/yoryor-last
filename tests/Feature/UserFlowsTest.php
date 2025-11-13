@@ -2,16 +2,13 @@
 
 namespace Tests\Feature;
 
-use Tests\TestCase;
-use App\Models\User;
-use App\Models\Profile;
-use App\Models\Match;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\Notification;
+use App\Models\Profile;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\Queue;
+use Tests\TestCase;
 
 class UserFlowsTest extends TestCase
 {
@@ -29,7 +26,7 @@ class UserFlowsTest extends TestCase
             'email' => 'john@example.com',
             'password' => 'password123',
             'password_confirmation' => 'password123',
-            'terms' => true
+            'terms' => true,
         ];
 
         $response = $this->post('/register', $userData);
@@ -48,7 +45,7 @@ class UserFlowsTest extends TestCase
             'last_name' => 'Doe',
             'date_of_birth' => '1995-01-01',
             'gender' => 'male',
-            'interested_in' => 'female'
+            'interested_in' => 'female',
         ];
 
         $response = $this->post('/onboard/basic-info', $basicInfoData);
@@ -60,7 +57,7 @@ class UserFlowsTest extends TestCase
 
         $contactData = [
             'phone' => '+1234567890',
-            'location' => 'New York, NY'
+            'location' => 'New York, NY',
         ];
 
         $response = $this->post('/onboard/contact-info', $contactData);
@@ -74,7 +71,7 @@ class UserFlowsTest extends TestCase
             'bio' => 'Love to travel and meet new people',
             'height' => '6 feet',
             'education' => 'Bachelor\'s Degree',
-            'profession' => 'Software Engineer'
+            'profession' => 'Software Engineer',
         ];
 
         $response = $this->post('/onboard/about-you', $aboutData);
@@ -88,7 +85,7 @@ class UserFlowsTest extends TestCase
             'age_min' => 25,
             'age_max' => 35,
             'distance' => 50,
-            'gender_preference' => 'female'
+            'gender_preference' => 'female',
         ];
 
         $response = $this->post('/onboard/preferences', $preferencesData);
@@ -99,7 +96,7 @@ class UserFlowsTest extends TestCase
         $response->assertStatus(200);
 
         $interestsData = [
-            'interests' => ['Travel', 'Music', 'Sports', 'Art']
+            'interests' => ['Travel', 'Music', 'Sports', 'Art'],
         ];
 
         $response = $this->post('/onboard/interests', $interestsData);
@@ -118,7 +115,7 @@ class UserFlowsTest extends TestCase
             'longitude' => -74.0060,
             'city' => 'New York',
             'state' => 'NY',
-            'country' => 'US'
+            'country' => 'US',
         ];
 
         $response = $this->post('/onboard/location', $locationData);
@@ -136,7 +133,7 @@ class UserFlowsTest extends TestCase
         $this->assertDatabaseHas('profiles', [
             'user_id' => $user->id,
             'first_name' => 'John',
-            'last_name' => 'Doe'
+            'last_name' => 'Doe',
         ]);
     }
 
@@ -145,7 +142,7 @@ class UserFlowsTest extends TestCase
         // Create two users
         $user1 = User::factory()->create();
         $user2 = User::factory()->create();
-        
+
         \App\Models\Profile::factory()->create(['user_id' => $user1->id]);
         \App\Models\Profile::factory()->create(['user_id' => $user2->id]);
 
@@ -163,18 +160,18 @@ class UserFlowsTest extends TestCase
         $this->assertDatabaseHas('matches', [
             'user1_id' => $user1->id,
             'user2_id' => $user2->id,
-            'status' => 'matched'
+            'status' => 'matched',
         ]);
 
         // Verify both users received match notifications
         $this->assertDatabaseHas('notifications', [
             'user_id' => $user1->id,
-            'type' => 'match'
+            'type' => 'match',
         ]);
 
         $this->assertDatabaseHas('notifications', [
             'user_id' => $user2->id,
-            'type' => 'match'
+            'type' => 'match',
         ]);
     }
 
@@ -183,16 +180,15 @@ class UserFlowsTest extends TestCase
         // Create matched users
         $user1 = User::factory()->create();
         $user2 = User::factory()->create();
-        
+
         \App\Models\Profile::factory()->create(['user_id' => $user1->id]);
         \App\Models\Profile::factory()->create(['user_id' => $user2->id]);
 
         // Create a match
-        \App\Models\Match::create([
-            'user1_id' => $user1->id,
-            'user2_id' => $user2->id,
-            'status' => 'matched',
-            'matched_at' => now()
+        \App\Models\UserMatch::create([
+            'user_id' => $user1->id,
+            'matched_user_id' => $user2->id,
+            'matched_at' => now(),
         ]);
 
         // User1 sends first message
@@ -200,7 +196,7 @@ class UserFlowsTest extends TestCase
         $response = $this->postJson('/api/v1/messages', [
             'recipient_id' => $user2->id,
             'content' => 'Hello! How are you?',
-            'type' => 'text'
+            'type' => 'text',
         ]);
         $response->assertStatus(201);
 
@@ -208,21 +204,21 @@ class UserFlowsTest extends TestCase
         $conversation = \App\Models\Conversation::where('user1_id', $user1->id)
             ->where('user2_id', $user2->id)
             ->first();
-        
+
         $this->assertNotNull($conversation);
 
         // Verify message was created
         $this->assertDatabaseHas('messages', [
             'conversation_id' => $conversation->id,
             'sender_id' => $user1->id,
-            'content' => 'Hello! How are you?'
+            'content' => 'Hello! How are you?',
         ]);
 
         // User2 responds
         $this->actingAs($user2);
         $response = $this->postJson("/api/v1/messages/{$conversation->id}", [
             'content' => 'Hi! I\'m doing great, thanks!',
-            'type' => 'text'
+            'type' => 'text',
         ]);
         $response->assertStatus(201);
 
@@ -230,7 +226,7 @@ class UserFlowsTest extends TestCase
         $this->assertDatabaseHas('messages', [
             'conversation_id' => $conversation->id,
             'sender_id' => $user2->id,
-            'content' => 'Hi! I\'m doing great, thanks!'
+            'content' => 'Hi! I\'m doing great, thanks!',
         ]);
 
         // User1 marks messages as read
@@ -244,23 +240,22 @@ class UserFlowsTest extends TestCase
         // Create matched users
         $user1 = User::factory()->create();
         $user2 = User::factory()->create();
-        
+
         \App\Models\Profile::factory()->create(['user_id' => $user1->id]);
         \App\Models\Profile::factory()->create(['user_id' => $user2->id]);
 
         // Create a match
-        \App\Models\Match::create([
-            'user1_id' => $user1->id,
-            'user2_id' => $user2->id,
-            'status' => 'matched',
-            'matched_at' => now()
+        \App\Models\UserMatch::create([
+            'user_id' => $user1->id,
+            'matched_user_id' => $user2->id,
+            'matched_at' => now(),
         ]);
 
         // User1 initiates video call
         $this->actingAs($user1);
         $response = $this->postJson('/api/v1/video-calls', [
             'recipient_id' => $user2->id,
-            'type' => 'video'
+            'type' => 'video',
         ]);
         $response->assertStatus(201);
 
@@ -278,7 +273,7 @@ class UserFlowsTest extends TestCase
         $this->assertDatabaseHas('video_calls', [
             'caller_id' => $user1->id,
             'recipient_id' => $user2->id,
-            'status' => 'completed'
+            'status' => 'completed',
         ]);
     }
 
@@ -289,7 +284,7 @@ class UserFlowsTest extends TestCase
 
         // User starts photo verification
         $response = $this->postJson('/api/v1/verification/photo', [
-            'photo' => 'base64_encoded_image_data'
+            'photo' => 'base64_encoded_image_data',
         ]);
         $response->assertStatus(200);
 
@@ -298,13 +293,13 @@ class UserFlowsTest extends TestCase
             'id_type' => 'drivers_license',
             'id_number' => '123456789',
             'front_image' => 'base64_encoded_image_data',
-            'back_image' => 'base64_encoded_image_data'
+            'back_image' => 'base64_encoded_image_data',
         ]);
         $response->assertStatus(200);
 
         // User verifies phone number
         $response = $this->postJson('/api/v1/verification/phone', [
-            'phone_number' => '+1234567890'
+            'phone_number' => '+1234567890',
         ]);
         $response->assertStatus(200);
 
@@ -321,8 +316,8 @@ class UserFlowsTest extends TestCase
                     'id_verified',
                     'phone_verified',
                     'email_verified',
-                    'overall_score'
-                ]
+                    'overall_score',
+                ],
             ]);
     }
 
@@ -339,7 +334,7 @@ class UserFlowsTest extends TestCase
         $response = $this->postJson('/api/v1/subscription/upgrade', [
             'plan_id' => 'premium',
             'payment_method' => 'stripe',
-            'stripe_token' => 'tok_visa'
+            'stripe_token' => 'tok_visa',
         ]);
         $response->assertStatus(200);
 
@@ -347,7 +342,7 @@ class UserFlowsTest extends TestCase
         $this->assertDatabaseHas('subscriptions', [
             'user_id' => $user->id,
             'plan_id' => 'premium',
-            'status' => 'active'
+            'status' => 'active',
         ]);
 
         // User views billing history
@@ -361,7 +356,7 @@ class UserFlowsTest extends TestCase
         // Verify subscription was cancelled
         $this->assertDatabaseHas('subscriptions', [
             'user_id' => $user->id,
-            'status' => 'cancelled'
+            'status' => 'cancelled',
         ]);
     }
 
@@ -374,7 +369,7 @@ class UserFlowsTest extends TestCase
         $response = $this->postJson('/api/v1/safety/emergency-contacts', [
             'name' => 'Emergency Contact',
             'phone' => '+1234567890',
-            'relationship' => 'friend'
+            'relationship' => 'friend',
         ]);
         $response->assertStatus(201);
 
@@ -389,7 +384,7 @@ class UserFlowsTest extends TestCase
         // Verify panic activation was recorded
         $this->assertDatabaseHas('panic_activations', [
             'user_id' => $user->id,
-            'status' => 'active'
+            'status' => 'active',
         ]);
     }
 
@@ -407,7 +402,7 @@ class UserFlowsTest extends TestCase
             'age_min' => 25,
             'age_max' => 35,
             'distance' => 50,
-            'interests' => 'Travel,Music'
+            'interests' => 'Travel,Music',
         ]);
         $response->assertStatus(200);
 
@@ -430,7 +425,7 @@ class UserFlowsTest extends TestCase
         $reportedUser = User::factory()->create();
         $response = $this->postJson("/api/user/report/{$reportedUser->id}", [
             'reason' => 'inappropriate_behavior',
-            'description' => 'User was being inappropriate'
+            'description' => 'User was being inappropriate',
         ]);
         $response->assertStatus(200);
     }
@@ -446,7 +441,7 @@ class UserFlowsTest extends TestCase
             'type' => 'match',
             'title' => 'New Match!',
             'message' => 'You have a new match with Jane Doe',
-            'data' => json_encode(['user_id' => 2, 'user_name' => 'Jane Doe'])
+            'data' => json_encode(['user_id' => 2, 'user_name' => 'Jane Doe']),
         ]);
 
         // User views notifications
@@ -483,7 +478,7 @@ class UserFlowsTest extends TestCase
         // User generates report
         $response = $this->postJson('/api/v1/analytics/report', [
             'date_range' => '30',
-            'metrics' => ['profile_views', 'matches', 'messages']
+            'metrics' => ['profile_views', 'matches', 'messages'],
         ]);
         $response->assertStatus(200);
     }
@@ -495,13 +490,13 @@ class UserFlowsTest extends TestCase
 
         // Test mobile viewport
         $response = $this->get('/dashboard', [
-            'User-Agent' => 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15'
+            'User-Agent' => 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15',
         ]);
         $response->assertStatus(200);
 
         // Test tablet viewport
         $response = $this->get('/dashboard', [
-            'User-Agent' => 'Mozilla/5.0 (iPad; CPU OS 14_0 like Mac OS X) AppleWebKit/605.1.15'
+            'User-Agent' => 'Mozilla/5.0 (iPad; CPU OS 14_0 like Mac OS X) AppleWebKit/605.1.15',
         ]);
         $response->assertStatus(200);
     }
@@ -538,14 +533,14 @@ class UserFlowsTest extends TestCase
         // Test CSRF protection
         $response = $this->postJson('/api/v1/messages', [
             'recipient_id' => 1,
-            'content' => 'Test message'
+            'content' => 'Test message',
         ]);
         $response->assertStatus(200); // Should be protected by Sanctum
 
         // Test XSS protection
         $response = $this->postJson('/api/v1/messages', [
             'recipient_id' => 1,
-            'content' => '<script>alert("xss")</script>'
+            'content' => '<script>alert("xss")</script>',
         ]);
         $response->assertStatus(201);
         // Content should be sanitized

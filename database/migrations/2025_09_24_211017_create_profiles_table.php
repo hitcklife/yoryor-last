@@ -35,7 +35,7 @@ return new class extends Migration
             $table->text('bio')->nullable();
             $table->json('interests')->nullable();
             $table->enum('looking_for_relationship', ['casual', 'serious', 'friendship', 'open'])
-                  ->default('open');
+                ->default('open');
 
             // Professional
             $table->string('occupation', 100)->nullable();
@@ -46,6 +46,7 @@ return new class extends Migration
             $table->integer('profile_views')->default(0);
             $table->timestamp('profile_completed_at')->nullable();
 
+            $table->softDeletes();
             $table->timestamps();
 
             // Indexes for matching and search

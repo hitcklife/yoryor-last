@@ -11,15 +11,15 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create("report_evidence", function (Blueprint $table) {
+        Schema::create('report_evidence', function (Blueprint $table) {
             $table->id();
-            $table->foreignId("report_id")->constrained("enhanced_user_reports")->onDelete("cascade");
-            $table->string("evidence_type");
-            $table->string("file_path")->nullable();
-            $table->text("description")->nullable();
+            $table->foreignId('report_id')->constrained('user_reports')->onDelete('cascade');
+            $table->string('evidence_type');
+            $table->string('file_path')->nullable();
+            $table->text('description')->nullable();
             $table->timestamps();
-            
-            $table->index(["report_id", "evidence_type"]);
+
+            $table->index(['report_id', 'evidence_type']);
         });
     }
 

@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A comprehensive Muslim dating and matchmaking platform built with Laravel 12, emphasizing cultural values, family involvement, and serious relationships. The platform modernizes traditional matchmaking while respecting Islamic cultural and religious values.
 
-**Tech Stack:** Laravel 12, PHP 8.2+, Tailwind CSS 4.0, Laravel Reverb (WebSocket), Laravel Sanctum (API), SQLite (dev) / MySQL (prod)
+**Tech Stack:** Laravel 12, PHP 8.2+, Tailwind CSS 4.0, Laravel Reverb (WebSocket), Laravel Sanctum (API), PostgreSQL
 
 **Core Purpose:** Islamic/Cultural Dating & Matchmaking with family involvement and serious commitment to marriage.
 
@@ -140,14 +140,16 @@ public function register(Request $request) {
 
 ### 70+ Tables Organized by Domain
 
+**Database:** PostgreSQL (default connection configured)
+
 **Core Pattern: User → Profile → Extended Profiles**
-- `users` (authentication, basic info)
-- `profiles` (core profile data)
+- `users` (authentication, basic info - password varchar(255) for future-proof hashing)
+- `profiles` (core profile data with soft deletes)
 - Extended profiles: `user_cultural_profiles`, `user_career_profiles`, `user_physical_profiles`, `user_family_preferences`, `user_location_preferences`
 
 **Communication: Chat → Messages → Reads**
 - `chats` (conversations)
-- `chat_users` (pivot: participants)
+- `chat_users` (pivot: participants with indexes)
 - `messages` (chat messages)
 - `message_reads` (read receipts)
 - `calls` (video/voice calls linked to messages)
@@ -155,7 +157,17 @@ public function register(Request $request) {
 **Matching: Likes → Matches**
 - `likes` (one-way interest)
 - `dislikes` (pass/reject)
-- `matches` (mutual likes - created automatically)
+- `matches` (mutual likes - created automatically, with soft deletes)
+
+**Reporting System:**
+- `user_reports` (comprehensive reporting with severity, priority, evidence)
+- `report_evidence` (file attachments for reports)
+- `report_categories` (report categorization)
+
+**Key Model Names:**
+- `UserMatch` model → `matches` table (renamed from `Match` to avoid PHP 8+ reserved keyword)
+- `UserReport` model → `user_reports` table (consolidated from duplicate tables)
+- All pivot tables have proper indexes for reverse lookups
 
 **Key Relationships:**
 ```php
@@ -163,15 +175,25 @@ User hasOne Profile
 User hasOne UserPreference
 User hasMany UserPhoto
 User belongsToMany Chat (via chat_users)
-User belongsToMany Match (self-referencing)
+User hasMany UserMatch (self-referencing via user_id/matched_user_id)
 Chat hasMany Message
 Message belongsTo Call
+UserReport belongsTo User (reporter_id)
+UserReport belongsTo User (reported_user_id)
+UserReport hasMany ReportEvidence
 ```
 
+**Soft Deletes Enabled:**
+- `profiles` - Data retention for deleted profiles
+- `matches` - Track match history even after deletion
+- `user_blocks` - Audit trail for blocking history
+- `user_photos` - Photo history preservation
+
 ### Migration Order Matters
-- Migrations run chronologically by filename timestamp
+- Migrations run chronologically by filename timestamp (2025_09_24_* to 2025_09_27_*)
 - Foreign keys added last: `2025_09_24_999999_add_foreign_key_constraints.php`
 - Never modify existing migrations after running in production
+- Removed duplicate migrations: `create_user_reports_table` (old basic version), `create_pulse_tables` (empty placeholder)
 
 ## Authentication & Authorization
 
@@ -235,7 +257,7 @@ Echo.private(`chat.${chatId}`)
 ### JSON:API Standard
 - All API responses use JSON:API format via API Resources
 - Structure: `{ type, id, attributes, relationships, included }`
-- Resources in `app/Http/Resources/`: `UserResource`, `MessageResource`, `MatchResource`
+- Resources in `app/Http/Resources/`: `UserResource`, `MessageResource`, `MatchResource` (uses `UserMatch` model)
 
 ### API Versioning
 - All endpoints prefixed: `/api/v1/`
@@ -619,11 +641,13 @@ Comprehensive documentation available in `/docs/`:
 ## Project-Specific Conventions
 
 ### Naming Conventions
-- Models: Singular PascalCase (`User`, `UserPhoto`)
+- Models: Singular PascalCase (`User`, `UserPhoto`, `UserMatch`, `UserReport`)
+  - Avoid PHP reserved keywords: Use `UserMatch` not `Match`, `UserEnum` not `Enum`
 - Controllers: Plural + Controller (`UsersController`, `ChatsController`)
 - Services: Singular + Service (`AuthService`, `MediaUploadService`)
 - Migrations: snake_case with action (`create_users_table`, `add_foreign_keys`)
 - Events: PascalCase + Event (`NewMessageEvent`, `CallInitiatedEvent`)
+- Table Names: Explicit `protected $table` when model name differs from table (e.g., `UserMatch` → `matches`)
 
 ### Model Relationships
 - Always define inverse relationships

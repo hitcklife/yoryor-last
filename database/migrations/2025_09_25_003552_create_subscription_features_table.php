@@ -11,15 +11,19 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create("subscription_features", function (Blueprint $table) {
+        Schema::create('subscription_features', function (Blueprint $table) {
             $table->id();
-            $table->foreignId("plan_id")->constrained("subscription_plans")->onDelete("cascade");
-            $table->foreignId("feature_id")->constrained("plan_features")->onDelete("cascade");
-            $table->integer("limit_value")->nullable();
-            $table->boolean("is_unlimited")->default(false);
+            $table->foreignId('plan_id')->constrained('subscription_plans')->onDelete('cascade');
+            $table->foreignId('feature_id')->constrained('plan_features')->onDelete('cascade');
+            $table->integer('limit_value')->nullable();
+            $table->boolean('is_unlimited')->default(false);
             $table->timestamps();
-            
-            $table->unique(["plan_id", "feature_id"]);
+
+            $table->unique(['plan_id', 'feature_id']);
+
+            // Indexes for reverse lookups
+            $table->index('plan_id');
+            $table->index('feature_id');
         });
     }
 

@@ -2,24 +2,23 @@
 
 namespace Database\Seeders;
 
-use App\Models\User;
-use App\Models\UserSubscription;
-use Illuminate\Notifications\DatabaseNotification;
-use App\Models\UserBlock;
-use App\Models\UserReport;
-use App\Models\UserActivity;
-use App\Models\UserSetting;
-use App\Models\UserUsageLimits;
-use App\Models\UserMonthlyUsage;
-use App\Models\PaymentTransaction;
 use App\Models\Call;
-use App\Models\PanicActivation;
-use App\Models\UserSafetyScore;
-use App\Models\UserFeedback;
 use App\Models\DataExportRequest;
-use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\DB;
+use App\Models\PanicActivation;
+use App\Models\PaymentTransaction;
+use App\Models\User;
+use App\Models\UserActivity;
+use App\Models\UserBlock;
+use App\Models\UserFeedback;
+use App\Models\UserMonthlyUsage;
+use App\Models\UserReport;
+use App\Models\UserSafetyScore;
+use App\Models\UserSetting;
+use App\Models\UserSubscription;
+use App\Models\UserUsageLimits;
 use Carbon\Carbon;
+use Illuminate\Database\Seeder;
+use Illuminate\Notifications\DatabaseNotification;
 
 class AdditionalDataSeeder extends Seeder
 {
@@ -31,39 +30,40 @@ class AdditionalDataSeeder extends Seeder
         $this->command->info('Creating additional data for users...');
 
         $users = User::all();
-        
+
         if ($users->isEmpty()) {
             $this->command->error('No users found. Please run UserSeeder first.');
+
             return;
         }
 
         // Create user subscriptions
         $this->createUserSubscriptions($users);
-        
+
         // Create notifications
         $this->createNotifications($users);
-        
+
         // Create user blocks and reports
         $this->createUserBlocksAndReports($users);
-        
+
         // Create user activities
         $this->createUserActivities($users);
-        
+
         // Create user settings
         $this->createUserSettings($users);
-        
+
         // Create usage limits and monthly usage
         $this->createUsageData($users);
-        
+
         // Create payment transactions
         $this->createPaymentTransactions($users);
-        
+
         // Create calls
         $this->createCalls($users);
-        
+
         // Create safety data
         $this->createSafetyData($users);
-        
+
         // Create feedback and export requests
         $this->createFeedbackAndExports($users);
 
@@ -73,7 +73,7 @@ class AdditionalDataSeeder extends Seeder
     private function createUserSubscriptions($users): void
     {
         $this->command->info('Creating user subscriptions...');
-        
+
         $subscriptionPlans = \App\Models\SubscriptionPlan::all();
         $progressBar = $this->command->getOutput()->createProgressBar($users->count());
         $progressBar->start();
@@ -84,7 +84,7 @@ class AdditionalDataSeeder extends Seeder
                 $plan = $subscriptionPlans->random();
                 $startDate = Carbon::now()->subDays(rand(0, 365));
                 $endDate = $startDate->copy()->addMonths(rand(1, 12));
-                
+
                 UserSubscription::create([
                     'user_id' => $user->id,
                     'plan_id' => $plan->id,
@@ -102,10 +102,10 @@ class AdditionalDataSeeder extends Seeder
                     ]),
                 ]);
             }
-            
+
             $progressBar->advance();
         }
-        
+
         $progressBar->finish();
         $this->command->newLine();
     }
@@ -113,7 +113,7 @@ class AdditionalDataSeeder extends Seeder
     private function createNotifications($users): void
     {
         $this->command->info('Creating notifications...');
-        
+
         $notificationTypes = ['match', 'message', 'like', 'view', 'system', 'verification', 'subscription'];
         $progressBar = $this->command->getOutput()->createProgressBar($users->count() * 5);
         $progressBar->start();
@@ -121,11 +121,11 @@ class AdditionalDataSeeder extends Seeder
         foreach ($users as $user) {
             // Create 2-5 notifications per user
             $notificationCount = rand(2, 5);
-            
+
             for ($i = 0; $i < $notificationCount; $i++) {
                 $type = fake()->randomElement($notificationTypes);
                 $isRead = rand(0, 1);
-                
+
                 DatabaseNotification::create([
                     'id' => fake()->uuid(),
                     'type' => $type,
@@ -140,10 +140,10 @@ class AdditionalDataSeeder extends Seeder
                     'created_at' => Carbon::now()->subDays(rand(0, 30)),
                 ]);
             }
-            
+
             $progressBar->advance();
         }
-        
+
         $progressBar->finish();
         $this->command->newLine();
     }
@@ -151,7 +151,7 @@ class AdditionalDataSeeder extends Seeder
     private function createUserBlocksAndReports($users): void
     {
         $this->command->info('Creating user blocks and reports...');
-        
+
         $progressBar = $this->command->getOutput()->createProgressBar($users->count());
         $progressBar->start();
 
@@ -159,9 +159,9 @@ class AdditionalDataSeeder extends Seeder
             // 20% of users have blocked someone
             if (rand(1, 10) <= 2) {
                 $blockedUser = $users->where('id', '!=', $user->id)->random();
-                
+
                 // Check if block already exists
-                if (!UserBlock::where('blocker_id', $user->id)->where('blocked_id', $blockedUser->id)->exists()) {
+                if (! UserBlock::where('blocker_id', $user->id)->where('blocked_id', $blockedUser->id)->exists()) {
                     UserBlock::create([
                         'blocker_id' => $user->id,
                         'blocked_id' => $blockedUser->id,
@@ -169,26 +169,25 @@ class AdditionalDataSeeder extends Seeder
                     ]);
                 }
             }
-            
+
             // 10% of users have reported someone
             if (rand(1, 10) === 1) {
                 $reportedUser = $users->where('id', '!=', $user->id)->random();
-                
+
                 UserReport::create([
                     'reporter_id' => $user->id,
-                    'reported_id' => $reportedUser->id,
-                    'reason' => fake()->randomElement(['inappropriate_content', 'spam', 'harassment', 'fake_profile', 'underage', 'other']),
+                    'reported_user_id' => $reportedUser->id,
+                    'category' => fake()->randomElement(['inappropriate_behavior', 'harassment', 'fake_profile', 'spam', 'inappropriate_photos', 'scam_attempt', 'hate_speech', 'violence_threat', 'underage', 'stolen_photos', 'catfishing', 'inappropriate_messages', 'offline_behavior', 'other']),
                     'description' => fake()->paragraph(),
-                    'status' => fake()->randomElement(['pending', 'reviewing', 'resolved', 'dismissed']),
-                    'metadata' => json_encode([
-                        'reported_at' => Carbon::now()->subDays(rand(0, 30)),
-                    ]),
+                    'severity' => fake()->randomElement(['low', 'medium', 'high', 'critical']),
+                    'status' => fake()->randomElement(['pending', 'under_review', 'resolved', 'dismissed']),
+                    'priority_score' => rand(1, 10),
                 ]);
             }
-            
+
             $progressBar->advance();
         }
-        
+
         $progressBar->finish();
         $this->command->newLine();
     }
@@ -196,7 +195,7 @@ class AdditionalDataSeeder extends Seeder
     private function createUserActivities($users): void
     {
         $this->command->info('Creating user activities...');
-        
+
         $activityTypes = ['login', 'logout', 'swipe_right', 'swipe_left', 'message_sent', 'profile_view', 'photo_upload', 'match_made', 'profile_updated'];
         $progressBar = $this->command->getOutput()->createProgressBar($users->count() * 10);
         $progressBar->start();
@@ -204,7 +203,7 @@ class AdditionalDataSeeder extends Seeder
         foreach ($users as $user) {
             // Create 3-8 activities per user
             $activityCount = rand(3, 8);
-            
+
             for ($i = 0; $i < $activityCount; $i++) {
                 UserActivity::create([
                     'user_id' => $user->id,
@@ -215,10 +214,10 @@ class AdditionalDataSeeder extends Seeder
                     'created_at' => Carbon::now()->subDays(rand(0, 30)),
                 ]);
             }
-            
+
             $progressBar->advance();
         }
-        
+
         $progressBar->finish();
         $this->command->newLine();
     }
@@ -226,13 +225,13 @@ class AdditionalDataSeeder extends Seeder
     private function createUserSettings($users): void
     {
         $this->command->info('Creating user settings...');
-        
+
         $progressBar = $this->command->getOutput()->createProgressBar($users->count());
         $progressBar->start();
 
         foreach ($users as $user) {
             // Check if settings already exist
-            if (!UserSetting::where('user_id', $user->id)->exists()) {
+            if (! UserSetting::where('user_id', $user->id)->exists()) {
                 UserSetting::create([
                     'user_id' => $user->id,
                     'email_notifications_enabled' => rand(0, 1),
@@ -249,10 +248,10 @@ class AdditionalDataSeeder extends Seeder
                     'max_distance' => rand(10, 50),
                 ]);
             }
-            
+
             $progressBar->advance();
         }
-        
+
         $progressBar->finish();
         $this->command->newLine();
     }
@@ -260,7 +259,7 @@ class AdditionalDataSeeder extends Seeder
     private function createUsageData($users): void
     {
         $this->command->info('Creating usage data...');
-        
+
         $progressBar = $this->command->getOutput()->createProgressBar($users->count());
         $progressBar->start();
 
@@ -269,7 +268,7 @@ class AdditionalDataSeeder extends Seeder
             for ($i = 0; $i < 7; $i++) {
                 $date = Carbon::now()->subDays($i);
                 // Check if usage limits already exist for this user and date
-                if (!UserUsageLimits::where('user_id', $user->id)->where('date', $date)->exists()) {
+                if (! UserUsageLimits::where('user_id', $user->id)->where('date', $date)->exists()) {
                     UserUsageLimits::create([
                         'user_id' => $user->id,
                         'date' => $date,
@@ -282,9 +281,9 @@ class AdditionalDataSeeder extends Seeder
                     ]);
                 }
             }
-            
+
             // Create monthly usage
-            if (!UserMonthlyUsage::where('user_id', $user->id)->where('year', Carbon::now()->year)->where('month', Carbon::now()->month)->exists()) {
+            if (! UserMonthlyUsage::where('user_id', $user->id)->where('year', Carbon::now()->year)->where('month', Carbon::now()->month)->exists()) {
                 UserMonthlyUsage::create([
                     'user_id' => $user->id,
                     'year' => Carbon::now()->year,
@@ -295,10 +294,10 @@ class AdditionalDataSeeder extends Seeder
                     'voice_minutes_total' => rand(0, 1800),
                 ]);
             }
-            
+
             $progressBar->advance();
         }
-        
+
         $progressBar->finish();
         $this->command->newLine();
     }
@@ -306,7 +305,7 @@ class AdditionalDataSeeder extends Seeder
     private function createPaymentTransactions($users): void
     {
         $this->command->info('Creating payment transactions...');
-        
+
         $progressBar = $this->command->getOutput()->createProgressBar($users->count());
         $progressBar->start();
 
@@ -314,13 +313,13 @@ class AdditionalDataSeeder extends Seeder
             // 60% of users have payment transactions
             if (rand(1, 10) <= 6) {
                 $transactionCount = rand(1, 5);
-                
+
                 for ($i = 0; $i < $transactionCount; $i++) {
                     PaymentTransaction::create([
                         'user_id' => $user->id,
                         'subscription_id' => null, // One-time payment
                         'provider' => fake()->randomElement(['stripe', 'payme', 'click']),
-                        'provider_transaction_id' => 'txn_' . fake()->uuid(),
+                        'provider_transaction_id' => 'txn_'.fake()->uuid(),
                         'type' => fake()->randomElement(['subscription', 'one_time', 'refund']),
                         'amount' => fake()->randomFloat(2, 5, 100),
                         'currency' => fake()->randomElement(['USD', 'UZS', 'EUR', 'RUB']),
@@ -334,10 +333,10 @@ class AdditionalDataSeeder extends Seeder
                     ]);
                 }
             }
-            
+
             $progressBar->advance();
         }
-        
+
         $progressBar->finish();
         $this->command->newLine();
     }
@@ -345,7 +344,7 @@ class AdditionalDataSeeder extends Seeder
     private function createCalls($users): void
     {
         $this->command->info('Creating calls...');
-        
+
         $progressBar = $this->command->getOutput()->createProgressBar($users->count());
         $progressBar->start();
 
@@ -353,14 +352,14 @@ class AdditionalDataSeeder extends Seeder
             // 40% of users have made calls
             if (rand(1, 10) <= 4) {
                 $callCount = rand(1, 10);
-                
+
                 for ($i = 0; $i < $callCount; $i++) {
                     $otherUser = $users->where('id', '!=', $user->id)->random();
                     $callType = fake()->randomElement(['video', 'voice']);
                     $duration = rand(30, 3600); // 30 seconds to 1 hour
-                    
+
                     Call::create([
-                        'channel_name' => 'call_' . fake()->uuid(),
+                        'channel_name' => 'call_'.fake()->uuid(),
                         'caller_id' => $user->id,
                         'receiver_id' => $otherUser->id,
                         'type' => $callType,
@@ -370,10 +369,10 @@ class AdditionalDataSeeder extends Seeder
                     ]);
                 }
             }
-            
+
             $progressBar->advance();
         }
-        
+
         $progressBar->finish();
         $this->command->newLine();
     }
@@ -381,13 +380,13 @@ class AdditionalDataSeeder extends Seeder
     private function createSafetyData($users): void
     {
         $this->command->info('Creating safety data...');
-        
+
         $progressBar = $this->command->getOutput()->createProgressBar($users->count());
         $progressBar->start();
 
         foreach ($users as $user) {
             // Create safety score
-            if (!UserSafetyScore::where('user_id', $user->id)->exists()) {
+            if (! UserSafetyScore::where('user_id', $user->id)->exists()) {
                 UserSafetyScore::create([
                     'user_id' => $user->id,
                     'overall_score' => rand(60, 100),
@@ -398,7 +397,7 @@ class AdditionalDataSeeder extends Seeder
                     'last_calculated_at' => Carbon::now()->subDays(rand(0, 7)),
                 ]);
             }
-            
+
             // 5% of users have panic activations
             if (rand(1, 20) === 1) {
                 PanicActivation::create([
@@ -424,10 +423,10 @@ class AdditionalDataSeeder extends Seeder
                     'authorities_contacted' => rand(0, 1),
                 ]);
             }
-            
+
             $progressBar->advance();
         }
-        
+
         $progressBar->finish();
         $this->command->newLine();
     }
@@ -435,7 +434,7 @@ class AdditionalDataSeeder extends Seeder
     private function createFeedbackAndExports($users): void
     {
         $this->command->info('Creating feedback and export requests...');
-        
+
         $progressBar = $this->command->getOutput()->createProgressBar($users->count());
         $progressBar->start();
 
@@ -451,28 +450,28 @@ class AdditionalDataSeeder extends Seeder
                     'created_at' => Carbon::now()->subDays(rand(0, 30)),
                 ]);
             }
-            
+
             // 10% of users have data export requests
             if (rand(1, 10) === 1) {
                 DataExportRequest::create([
                     'user_id' => $user->id,
                     'status' => fake()->randomElement(['pending', 'processing', 'completed', 'failed']),
-                    'export_url' => rand(0, 1) ? 'https://example.com/exports/' . fake()->uuid() . '.zip' : null,
+                    'export_url' => rand(0, 1) ? 'https://example.com/exports/'.fake()->uuid().'.zip' : null,
                     'expires_at' => Carbon::now()->addDays(7),
                     'created_at' => Carbon::now()->subDays(rand(0, 30)),
                 ]);
             }
-            
+
             $progressBar->advance();
         }
-        
+
         $progressBar->finish();
         $this->command->newLine();
     }
 
     private function getNotificationTitle($type): string
     {
-        return match($type) {
+        return match ($type) {
             'match' => 'New Match!',
             'message' => 'New Message',
             'like' => 'Someone Liked You',
@@ -486,7 +485,7 @@ class AdditionalDataSeeder extends Seeder
 
     private function getNotificationMessage($type): string
     {
-        return match($type) {
+        return match ($type) {
             'match' => 'You have a new match!',
             'message' => 'You received a new message',
             'like' => 'Someone liked your profile',
@@ -500,7 +499,7 @@ class AdditionalDataSeeder extends Seeder
 
     private function getNotificationData($type): array
     {
-        return match($type) {
+        return match ($type) {
             'match' => ['match_id' => rand(1, 1000)],
             'message' => ['message_id' => rand(1, 1000)],
             'like' => ['liker_id' => rand(1, 1000)],
@@ -514,7 +513,7 @@ class AdditionalDataSeeder extends Seeder
 
     private function getActivityDescription($type): string
     {
-        return match($type) {
+        return match ($type) {
             'login' => 'User logged in',
             'profile_view' => 'Viewed a profile',
             'message_sent' => 'Sent a message',
@@ -528,7 +527,7 @@ class AdditionalDataSeeder extends Seeder
 
     private function getActivityMetadata($type): array
     {
-        return match($type) {
+        return match ($type) {
             'login' => ['ip_address' => fake()->ipv4()],
             'profile_view' => ['viewed_user_id' => rand(1, 1000)],
             'message_sent' => ['recipient_id' => rand(1, 1000)],
