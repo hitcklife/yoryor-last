@@ -14,67 +14,78 @@ class ChatResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
-        $user = $request->user();
+        $currentUser = auth()->user();
 
         return [
             'id' => $this->id,
             'type' => $this->type,
-            'name' => $this->when($this->type !== 'private', $this->name),
-            'description' => $this->when($this->type !== 'private', $this->description),
-            'is_active' => $this->is_active,
-            'last_activity_at' => $this->last_activity_at,
-            'created_at' => $this->created_at,
-            'updated_at' => $this->updated_at,
 
-            // Other user for private chats
+            // Chat Details
+            'name' => $this->name,
+            'description' => $this->description,
+
+            // Status
+            'is_active' => (bool) $this->is_active,
+            'last_activity_at' => $this->last_activity_at?->toIso8601String(),
+
+            // For Private Chats - Get the other user
             'other_user' => $this->when(
                 $this->type === 'private' && $this->relationLoaded('users'),
-                function () use ($user) {
-                    $otherUser = $this->users->where('id', '!=', $user->id)->first();
-                    return $otherUser ? new UserResource($otherUser) : null;
-                }
+                fn() => new UserResource($this->getOtherUser($currentUser))
             ),
 
-            // Last message with read status
+            // For Group Chats - Get all participants
+            'participants' => $this->when(
+                $this->relationLoaded('users'),
+                fn() => UserResource::collection($this->users)
+            ),
+
+            // Active participants (not left the chat)
+            'active_participants' => $this->when(
+                $this->relationLoaded('activeUsers'),
+                fn() => UserResource::collection($this->activeUsers)
+            ),
+
+            // Current user's chat settings
+            'is_muted' => $this->when(
+                $this->relationLoaded('users') && $currentUser,
+                fn() => $this->users->firstWhere('id', $currentUser->id)?->pivot?->is_muted ?? false
+            ),
+            'last_read_at' => $this->when(
+                $this->relationLoaded('users') && $currentUser,
+                fn() => $this->users->firstWhere('id', $currentUser->id)?->pivot?->last_read_at?->toIso8601String()
+            ),
+            'joined_at' => $this->when(
+                $this->relationLoaded('users') && $currentUser,
+                fn() => $this->users->firstWhere('id', $currentUser->id)?->pivot?->joined_at?->toIso8601String()
+            ),
+            'role' => $this->when(
+                $this->relationLoaded('users') && $currentUser,
+                fn() => $this->users->firstWhere('id', $currentUser->id)?->pivot?->role
+            ),
+
+            // Last Message
             'last_message' => $this->when(
                 $this->relationLoaded('lastMessage') && $this->lastMessage,
-                function () use ($user) {
-                    return new MessageResource($this->lastMessage);
-                }
+                fn() => new MessageResource($this->lastMessage)
+            ),
+
+            // Messages (when loaded)
+            'messages' => $this->when(
+                $this->relationLoaded('messages'),
+                fn() => MessageResource::collection($this->messages)
             ),
 
             // Unread count for current user
             'unread_count' => $this->when(
-                isset($this->unread_count),
-                $this->unread_count ?? 0
+                $currentUser,
+                fn() => (int) $this->getUnreadCountForUser($currentUser)
             ),
 
-            // All participants for group chats
-            'participants' => $this->when(
-                $this->type !== 'private' && $this->relationLoaded('users'),
-                function () {
-                    return UserResource::collection($this->users);
-                }
-            ),
-
-            // User-specific pivot data (muted status, last read time, etc.)
-            'user_settings' => $this->when(
-                $user && $this->relationLoaded('users'),
-                function () use ($user) {
-                    $pivotUser = $this->users->where('id', $user->id)->first();
-                    if (!$pivotUser) {
-                        return null;
-                    }
-
-                    return [
-                        'is_muted' => $pivotUser->pivot->is_muted ?? false,
-                        'last_read_at' => $pivotUser->pivot->last_read_at,
-                        'joined_at' => $pivotUser->pivot->joined_at,
-                        'left_at' => $pivotUser->pivot->left_at,
-                        'role' => $pivotUser->pivot->role ?? 'member',
-                    ];
-                }
-            ),
+            // Timestamps
+            'created_at' => $this->created_at?->toIso8601String(),
+            'updated_at' => $this->updated_at?->toIso8601String(),
+            'deleted_at' => $this->deleted_at?->toIso8601String(),
         ];
     }
 }

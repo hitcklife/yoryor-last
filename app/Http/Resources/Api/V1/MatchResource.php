@@ -18,34 +18,15 @@ class MatchResource extends JsonResource
             'id' => $this->id,
             'user_id' => $this->user_id,
             'matched_user_id' => $this->matched_user_id,
-            'matched_at' => $this->matched_at,
-            'created_at' => $this->created_at,
-            'updated_at' => $this->updated_at,
-            'is_mutual' => $this->when(isset($this->is_mutual), $this->is_mutual),
+            'matched_at' => $this->matched_at?->toIso8601String(),
 
-            // User who initiated the match
-            'user' => $this->when(
-                $this->relationLoaded('user'),
-                function () {
-                    return new UserResource($this->user);
-                }
-            ),
+            // User Relationships (when loaded)
+            'user' => new UserResource($this->whenLoaded('user')),
+            'matched_user' => new UserResource($this->whenLoaded('matchedUser')),
 
-            // Matched user
-            'matched_user' => $this->when(
-                $this->relationLoaded('matchedUser'),
-                function () {
-                    return new UserResource($this->matchedUser);
-                }
-            ),
-
-            // Chat created for this match
-            'chat' => $this->when(
-                isset($this->chat),
-                function () {
-                    return new ChatResource($this->chat);
-                }
-            ),
+            // Timestamps
+            'created_at' => $this->created_at?->toIso8601String(),
+            'updated_at' => $this->updated_at?->toIso8601String(),
         ];
     }
 }
