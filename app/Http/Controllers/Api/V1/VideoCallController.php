@@ -7,11 +7,11 @@ use App\Events\CallStatusChangedEvent;
 use App\Http\Controllers\Controller;
 use App\Models\Call;
 use App\Models\User;
-use App\Services\VideoSDKService;
 use App\Services\CallMessageService;
+use App\Services\VideoSDKService;
 use Exception;
-use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
@@ -19,6 +19,7 @@ use Illuminate\Validation\Rule;
 class VideoCallController extends Controller
 {
     protected $videoSDKService;
+
     protected $callMessageService;
 
     public function __construct(VideoSDKService $videoSDKService, CallMessageService $callMessageService)
@@ -30,7 +31,34 @@ class VideoCallController extends Controller
     /**
      * Generate a token for Video SDK
      *
-     * @return JsonResponse
+     * @OA\Post(
+     *     path="/v1/video-call/token",
+     *     summary="Generate Video SDK token",
+     *     description="Generates an authentication token for Video SDK",
+     *     operationId="getVideoCallToken",
+     *     tags={"Video Calls"},
+     *     security={{"bearerAuth": {}}},
+     *
+     *     @OA\Response(
+     *         response=200,
+     *         description="Token generated successfully",
+     *
+     *         @OA\JsonContent(
+     *
+     *             @OA\Property(property="status", type="string", example="success"),
+     *             @OA\Property(property="data", type="object",
+     *                 @OA\Property(property="token", type="string", example="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...")
+     *             )
+     *         )
+     *     ),
+     *
+     *     @OA\Response(
+     *         response=500,
+     *         description="Failed to generate token",
+     *
+     *         @OA\JsonContent(ref="#/components/schemas/Error")
+     *     )
+     * )
      */
     public function getToken(): JsonResponse
     {
@@ -42,28 +70,28 @@ class VideoCallController extends Controller
             return response()->json([
                 'status' => 'success',
                 'data' => [
-                    'token' => $token
-                ]
+                    'token' => $token,
+                ],
             ]);
         } catch (Exception $e) {
-            Log::error('Failed to generate Video SDK token: ' . $e->getMessage(), [
+            Log::error('Failed to generate Video SDK token: '.$e->getMessage(), [
                 'user_id' => $user->id,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
-            
+
             // Check if it's a configuration issue
             if (str_contains($e->getMessage(), 'not configured')) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'VideoSDK is not configured. Please set VIDEOSDK_API_KEY and VIDEOSDK_SECRET_KEY in your .env file.',
-                    'error' => 'Configuration missing'
+                    'error' => 'Configuration missing',
                 ], 500);
             }
-            
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to generate token: ' . $e->getMessage(),
-                'error' => $e->getMessage()
+                'message' => 'Failed to generate token: '.$e->getMessage(),
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
@@ -71,8 +99,43 @@ class VideoCallController extends Controller
     /**
      * Create a meeting
      *
-     * @param Request $request
-     * @return JsonResponse
+     * @OA\Post(
+     *     path="/v1/video-call/create-meeting",
+     *     summary="Create a video meeting",
+     *     description="Creates a new video meeting room",
+     *     operationId="createVideoMeeting",
+     *     tags={"Video Calls"},
+     *     security={{"bearerAuth": {}}},
+     *
+     *     @OA\RequestBody(
+     *
+     *         @OA\JsonContent(
+     *
+     *             @OA\Property(property="customRoomId", type="string", example="my-custom-room", nullable=true)
+     *         )
+     *     ),
+     *
+     *     @OA\Response(
+     *         response=200,
+     *         description="Meeting created successfully",
+     *
+     *         @OA\JsonContent(
+     *
+     *             @OA\Property(property="status", type="string", example="success"),
+     *             @OA\Property(property="data", type="object",
+     *                 @OA\Property(property="meetingId", type="string", example="abc-defg-hijk"),
+     *                 @OA\Property(property="token", type="string", example="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...")
+     *             )
+     *         )
+     *     ),
+     *
+     *     @OA\Response(
+     *         response=500,
+     *         description="Failed to create meeting",
+     *
+     *         @OA\JsonContent(ref="#/components/schemas/Error")
+     *     )
+     * )
      */
     public function createMeeting(Request $request): JsonResponse
     {
@@ -89,27 +152,25 @@ class VideoCallController extends Controller
                 'status' => 'success',
                 'data' => [
                     'meetingId' => $meetingData['meetingId'],
-                    'token' => $meetingData['token']
-                ]
+                    'token' => $meetingData['token'],
+                ],
             ]);
         } catch (Exception $e) {
-            Log::error('Failed to create meeting: ' . $e->getMessage(), [
+            Log::error('Failed to create meeting: '.$e->getMessage(), [
                 'user_id' => $user->id,
-                'customRoomId' => $request->input('customRoomId')
+                'customRoomId' => $request->input('customRoomId'),
             ]);
+
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to create meeting',
-                'error' => 'Failed to create meeting'
+                'error' => 'Failed to create meeting',
             ], 500);
         }
     }
 
     /**
      * Validate a meeting
-     *
-     * @param string $meetingId
-     * @return JsonResponse
      */
     public function validateMeeting(string $meetingId): JsonResponse
     {
@@ -122,18 +183,19 @@ class VideoCallController extends Controller
                 'status' => 'success',
                 'data' => [
                     'valid' => $validationData['valid'],
-                    'meetingId' => $validationData['meetingId']
-                ]
+                    'meetingId' => $validationData['meetingId'],
+                ],
             ]);
         } catch (Exception $e) {
-            Log::error('Failed to validate meeting: ' . $e->getMessage(), [
+            Log::error('Failed to validate meeting: '.$e->getMessage(), [
                 'user_id' => $user->id,
-                'meetingId' => $meetingId
+                'meetingId' => $meetingId,
             ]);
+
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to validate meeting',
-                'error' => 'Failed to validate meeting'
+                'error' => 'Failed to validate meeting',
             ], 500);
         }
     }
@@ -141,8 +203,53 @@ class VideoCallController extends Controller
     /**
      * Initiate a call to another user using Video SDK
      *
-     * @param Request $request
-     * @return JsonResponse
+     * @OA\Post(
+     *     path="/v1/video-call/initiate",
+     *     summary="Initiate a video call",
+     *     description="Initiates a video or voice call to another user",
+     *     operationId="initiateVideoCall",
+     *     tags={"Video Calls"},
+     *     security={{"bearerAuth": {}}},
+     *
+     *     @OA\RequestBody(
+     *         required=true,
+     *
+     *         @OA\JsonContent(
+     *             required={"recipient_id", "call_type"},
+     *
+     *             @OA\Property(property="recipient_id", type="integer", example=2, description="ID of the user to call"),
+     *             @OA\Property(property="call_type", type="string", enum={"video", "voice"}, example="video", description="Type of call")
+     *         )
+     *     ),
+     *
+     *     @OA\Response(
+     *         response=201,
+     *         description="Call initiated successfully",
+     *
+     *         @OA\JsonContent(
+     *
+     *             @OA\Property(property="status", type="string", example="success"),
+     *             @OA\Property(property="data", type="object",
+     *                 @OA\Property(property="call_id", type="integer", example=1),
+     *                 @OA\Property(property="meeting_id", type="string", example="abc-defg-hijk"),
+     *                 @OA\Property(property="token", type="string", example="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."),
+     *                 @OA\Property(property="type", type="string", example="video"),
+     *                 @OA\Property(property="message_id", type="integer", example=123, nullable=true),
+     *                 @OA\Property(property="caller", type="object",
+     *                     @OA\Property(property="id", type="integer", example=1),
+     *                     @OA\Property(property="name", type="string", example="John Doe")
+     *                 ),
+     *                 @OA\Property(property="receiver", type="object",
+     *                     @OA\Property(property="id", type="integer", example=2),
+     *                     @OA\Property(property="name", type="string", example="Jane Smith")
+     *                 )
+     *             )
+     *         )
+     *     ),
+     *
+     *     @OA\Response(response=400, description="Bad request", @OA\JsonContent(ref="#/components/schemas/Error")),
+     *     @OA\Response(response=500, description="Server error", @OA\JsonContent(ref="#/components/schemas/Error"))
+     * )
      */
     public function initiateCall(Request $request): JsonResponse
     {
@@ -159,7 +266,7 @@ class VideoCallController extends Controller
         if ($caller->id === $receiverId) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Cannot call yourself'
+                'message' => 'Cannot call yourself',
             ], 400);
         }
 
@@ -196,16 +303,17 @@ class VideoCallController extends Controller
                             'id' => $existingCall->receiver->id,
                             'name' => $existingCall->receiver->full_name,
                         ],
-                    ]
+                    ],
                 ]);
             } catch (Exception $e) {
-                Log::error('Failed to join existing call: ' . $e->getMessage(), [
+                Log::error('Failed to join existing call: '.$e->getMessage(), [
                     'call_id' => $existingCall->id,
-                    'user_id' => $caller->id
+                    'user_id' => $caller->id,
                 ]);
+
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Failed to join existing call'
+                    'message' => 'Failed to join existing call',
                 ], 500);
             }
         }
@@ -239,26 +347,24 @@ class VideoCallController extends Controller
                         'id' => $receiver->id,
                         'name' => $receiver->full_name,
                     ],
-                ]
+                ],
             ], 201);
         } catch (Exception $e) {
-            Log::error('Failed to initiate call: ' . $e->getMessage(), [
+            Log::error('Failed to initiate call: '.$e->getMessage(), [
                 'caller_id' => $caller->id,
                 'receiver_id' => $receiver->id,
-                'type' => $request->call_type
+                'type' => $request->call_type,
             ]);
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to initiate call'
+                'message' => 'Failed to initiate call',
             ], 500);
         }
     }
 
     /**
      * Join an existing call
-     *
-     * @param int $callId
-     * @return JsonResponse
      */
     public function joinCall(int $callId): JsonResponse
     {
@@ -269,7 +375,7 @@ class VideoCallController extends Controller
         if ($call->receiver_id !== $user->id) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Unauthorized to join this call'
+                'message' => 'Unauthorized to join this call',
             ], 403);
         }
 
@@ -277,7 +383,7 @@ class VideoCallController extends Controller
         if ($call->status !== 'initiated') {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Call is not available to join. Current status: ' . $call->status
+                'message' => 'Call is not available to join. Current status: '.$call->status,
             ], 400);
         }
 
@@ -310,25 +416,23 @@ class VideoCallController extends Controller
                         'id' => $call->receiver->id,
                         'name' => $call->receiver->full_name,
                     ],
-                ]
+                ],
             ]);
         } catch (Exception $e) {
-            Log::error('Failed to join call: ' . $e->getMessage(), [
+            Log::error('Failed to join call: '.$e->getMessage(), [
                 'call_id' => $callId,
-                'user_id' => $user->id
+                'user_id' => $user->id,
             ]);
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to join call'
+                'message' => 'Failed to join call',
             ], 500);
         }
     }
 
     /**
      * End an ongoing call
-     *
-     * @param int $callId
-     * @return JsonResponse
      */
     public function endCall(int $callId): JsonResponse
     {
@@ -339,15 +443,15 @@ class VideoCallController extends Controller
         if ($call->caller_id !== $user->id && $call->receiver_id !== $user->id) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Unauthorized to end this call'
+                'message' => 'Unauthorized to end this call',
             ], 403);
         }
 
         // Check if call can be ended
-        if (!in_array($call->status, ['initiated', 'ongoing'])) {
+        if (! in_array($call->status, ['initiated', 'ongoing'])) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Call cannot be ended. Current status: ' . $call->status
+                'message' => 'Call cannot be ended. Current status: '.$call->status,
             ], 400);
         }
 
@@ -371,25 +475,23 @@ class VideoCallController extends Controller
                     'duration' => $duration,
                     'formatted_duration' => $call->getFormattedDuration(),
                     'message_id' => $callMessage?->id,
-                ]
+                ],
             ]);
         } catch (Exception $e) {
-            Log::error('Failed to end call: ' . $e->getMessage(), [
+            Log::error('Failed to end call: '.$e->getMessage(), [
                 'call_id' => $callId,
-                'user_id' => $user->id
+                'user_id' => $user->id,
             ]);
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to end call'
+                'message' => 'Failed to end call',
             ], 500);
         }
     }
 
     /**
      * Reject an incoming call
-     *
-     * @param int $callId
-     * @return JsonResponse
      */
     public function rejectCall(int $callId): JsonResponse
     {
@@ -400,7 +502,7 @@ class VideoCallController extends Controller
         if ($call->receiver_id !== $user->id) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Unauthorized to reject this call'
+                'message' => 'Unauthorized to reject this call',
             ], 403);
         }
 
@@ -408,7 +510,7 @@ class VideoCallController extends Controller
         if ($call->status !== 'initiated') {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Call cannot be rejected. Current status: ' . $call->status
+                'message' => 'Call cannot be rejected. Current status: '.$call->status,
             ], 400);
         }
 
@@ -428,25 +530,23 @@ class VideoCallController extends Controller
                     'message' => 'Call rejected successfully',
                     'call_id' => $call->id,
                     'message_id' => $callMessage?->id,
-                ]
+                ],
             ]);
         } catch (Exception $e) {
-            Log::error('Failed to reject call: ' . $e->getMessage(), [
+            Log::error('Failed to reject call: '.$e->getMessage(), [
                 'call_id' => $callId,
-                'user_id' => $user->id
+                'user_id' => $user->id,
             ]);
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to reject call'
+                'message' => 'Failed to reject call',
             ], 500);
         }
     }
 
     /**
      * Handle missed call (called by system when call times out)
-     *
-     * @param int $callId
-     * @return JsonResponse
      */
     public function handleMissedCall(int $callId): JsonResponse
     {
@@ -456,7 +556,7 @@ class VideoCallController extends Controller
         if ($call->status !== 'initiated') {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Call cannot be marked as missed. Current status: ' . $call->status
+                'message' => 'Call cannot be marked as missed. Current status: '.$call->status,
             ], 400);
         }
 
@@ -469,24 +569,22 @@ class VideoCallController extends Controller
                 'data' => [
                     'message' => 'Call marked as missed',
                     'call_id' => $call->id,
-                ]
+                ],
             ]);
         } catch (Exception $e) {
-            Log::error('Failed to handle missed call: ' . $e->getMessage(), [
-                'call_id' => $callId
+            Log::error('Failed to handle missed call: '.$e->getMessage(), [
+                'call_id' => $callId,
             ]);
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to handle missed call'
+                'message' => 'Failed to handle missed call',
             ], 500);
         }
     }
 
     /**
      * Get call history with integrated messages
-     *
-     * @param Request $request
-     * @return JsonResponse
      */
     public function getCallHistory(Request $request): JsonResponse
     {
@@ -498,7 +596,7 @@ class VideoCallController extends Controller
             'call_status' => 'sometimes|string|in:completed,rejected,missed,ongoing',
             'call_type' => 'sometimes|string|in:video,voice',
             'date_from' => 'sometimes|date',
-            'date_to' => 'sometimes|date|after_or_equal:date_from'
+            'date_to' => 'sometimes|date|after_or_equal:date_from',
         ]);
 
         try {
@@ -507,30 +605,29 @@ class VideoCallController extends Controller
                 'call_type' => $request->call_type,
                 'date_from' => $request->date_from,
                 'date_to' => $request->date_to,
-                'per_page' => $request->get('per_page', 20)
+                'per_page' => $request->get('per_page', 20),
             ];
 
             $callHistory = $this->callMessageService->getCallHistory($user, $filters);
 
             return response()->json([
                 'status' => 'success',
-                'data' => $callHistory
+                'data' => $callHistory,
             ]);
         } catch (Exception $e) {
-            Log::error('Failed to get call history: ' . $e->getMessage(), [
-                'user_id' => $user->id
+            Log::error('Failed to get call history: '.$e->getMessage(), [
+                'user_id' => $user->id,
             ]);
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to get call history'
+                'message' => 'Failed to get call history',
             ], 500);
         }
     }
 
     /**
      * Get call analytics
-     *
-     * @return JsonResponse
      */
     public function getCallAnalytics(): JsonResponse
     {
@@ -541,15 +638,16 @@ class VideoCallController extends Controller
 
             return response()->json([
                 'status' => 'success',
-                'data' => $analytics
+                'data' => $analytics,
             ]);
         } catch (Exception $e) {
-            Log::error('Failed to get call analytics: ' . $e->getMessage(), [
-                'user_id' => $user->id
+            Log::error('Failed to get call analytics: '.$e->getMessage(), [
+                'user_id' => $user->id,
             ]);
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to get call analytics'
+                'message' => 'Failed to get call analytics',
             ], 500);
         }
     }
