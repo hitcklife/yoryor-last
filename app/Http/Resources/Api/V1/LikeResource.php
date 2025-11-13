@@ -5,7 +5,7 @@ namespace App\Http\Resources\Api\V1;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
-class MatchResource extends JsonResource
+class LikeResource extends JsonResource
 {
     /**
      * Transform the resource into an array.
@@ -17,13 +17,12 @@ class MatchResource extends JsonResource
         return [
             'id' => $this->id,
             'user_id' => $this->user_id,
-            'matched_user_id' => $this->matched_user_id,
-            'matched_at' => $this->matched_at,
+            'liked_user_id' => $this->liked_user_id,
+            'liked_at' => $this->when(isset($this->liked_at), $this->liked_at),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
-            'is_mutual' => $this->when(isset($this->is_mutual), $this->is_mutual),
 
-            // User who initiated the match
+            // User who initiated the like
             'user' => $this->when(
                 $this->relationLoaded('user'),
                 function () {
@@ -31,19 +30,11 @@ class MatchResource extends JsonResource
                 }
             ),
 
-            // Matched user
-            'matched_user' => $this->when(
-                $this->relationLoaded('matchedUser'),
+            // User who was liked
+            'liked_user' => $this->when(
+                $this->relationLoaded('likedUser'),
                 function () {
-                    return new UserResource($this->matchedUser);
-                }
-            ),
-
-            // Chat created for this match
-            'chat' => $this->when(
-                isset($this->chat),
-                function () {
-                    return new ChatResource($this->chat);
+                    return new UserResource($this->likedUser);
                 }
             ),
         ];
