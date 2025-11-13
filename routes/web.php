@@ -18,6 +18,11 @@ use Illuminate\Support\Facades\Broadcast;
 |
 */
 
+// TEST ROUTE - React + Inertia.js Welcome Page
+Route::get('/react-test', function () {
+    return \Inertia\Inertia::render('Welcome');
+})->name('react.test');
+
 // Language Switching Route
 Route::get('/locale/{locale}', function ($locale) {
     if (in_array($locale, ['en', 'uz', 'ru'])) {

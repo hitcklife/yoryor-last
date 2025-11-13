@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Models\User;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -13,6 +12,7 @@ use Illuminate\Validation\ValidationException;
 class AuthService
 {
     protected $mediaUploadService;
+
     protected $imageProcessingService;
 
     public function __construct(
@@ -26,11 +26,11 @@ class AuthService
     /**
      * Register a new user
      *
-     * @param array $data
-     * @return array
+     * @param  bool  $createSession  Create session for SPA mode (Next.js), false for token mode (React Native)
+     *
      * @throws \Exception
      */
-    public function register(array $data): array
+    public function register(array $data, bool $createSession = false): array
     {
         try {
             // Begin transaction
@@ -42,12 +42,12 @@ class AuthService
                 'phone' => $data['phone'] ?? null,
                 'password' => Hash::make($data['password']),
                 'registration_completed' => false,
-                'is_private' => $data['is_private'] ?? false
+                'is_private' => $data['is_private'] ?? false,
             ]);
 
             // Find country if provided
             $country_id = null;
-            if (!empty($data['country'])) {
+            if (! empty($data['country'])) {
                 $country = \App\Models\Country::where('name', $data['country'])
                     ->orWhere('code', $data['country'])
                     ->first();
@@ -59,7 +59,7 @@ class AuthService
 
             // Calculate age from date of birth
             $age = null;
-            if (!empty($data['date_of_birth'])) {
+            if (! empty($data['date_of_birth'])) {
                 $birthDate = new \DateTime($data['date_of_birth']);
                 $today = new \DateTime('today');
                 $age = $birthDate->diff($today)->y;
@@ -73,25 +73,35 @@ class AuthService
                 'gender' => $data['gender'],
                 'country_id' => $country_id,
                 'age' => $age,
-                'profile_completed_at' => now()
+                'profile_completed_at' => now(),
             ]);
 
             // Create default preferences
             $user->preference()->create([
                 'search_radius' => 10, // default value
                 'min_age' => 18,
-                'max_age' => 99
+                'max_age' => 99,
             ]);
 
             // Commit transaction
             DB::commit();
 
-            // Generate token
+            // For SPA mode (Next.js): Create session, no token
+            if ($createSession) {
+                Auth::login($user);
+
+                return [
+                    'user' => $user->load('profile'),
+                    'token' => null,
+                ];
+            }
+
+            // For mobile mode (React Native): Generate token
             $token = $user->createToken('auth_token')->plainTextToken;
 
             return [
                 'user' => $user->load('profile'),
-                'token' => $token
+                'token' => $token,
             ];
         } catch (\Exception $e) {
             // Rollback transaction
@@ -103,11 +113,11 @@ class AuthService
     /**
      * Login user
      *
-     * @param array $credentials
-     * @return array
+     * @param  bool  $createSession  Create session for SPA mode (Next.js), false for token mode (React Native)
+     *
      * @throws ValidationException
      */
-    public function login(array $credentials): array
+    public function login(array $credentials, bool $createSession = false): array
     {
         $authCredentials = [];
         if (isset($credentials['email'])) {
@@ -117,35 +127,52 @@ class AuthService
         }
         $authCredentials['password'] = $credentials['password'];
 
-        if (!Auth::attempt($authCredentials)) {
+        // Find user and verify password manually to avoid creating unwanted sessions
+        $user = User::where(function ($query) use ($authCredentials) {
+            if (isset($authCredentials['email'])) {
+                $query->where('email', $authCredentials['email']);
+            } else {
+                $query->where('phone', $authCredentials['phone']);
+            }
+        })->first();
+
+        if (! $user || ! Hash::check($authCredentials['password'], $user->password)) {
             throw ValidationException::withMessages([
-                'credentials' => ['The provided credentials are incorrect.']
+                'credentials' => ['The provided credentials are incorrect.'],
             ]);
         }
-
-        $user = Auth::user();
 
         // Check if user is disabled
         if ($user->disabled_at !== null) {
             throw ValidationException::withMessages([
-                'account' => ['Account is disabled']
+                'account' => ['Account is disabled'],
             ]);
         }
 
-        // Generate new token
+        // Update last login timestamp
+        $user->update(['last_login_at' => now()]);
+
+        // For SPA mode (Next.js): Create session, no token
+        if ($createSession) {
+            Auth::login($user);
+
+            return [
+                'user' => $user->load(['profile', 'preference']),
+                'token' => null,
+            ];
+        }
+
+        // For mobile mode (React Native): Generate token
         $token = $user->createToken('auth_token')->plainTextToken;
 
         return [
             'user' => $user->load(['profile', 'preference']),
-            'token' => $token
+            'token' => $token,
         ];
     }
 
     /**
      * Logout user
-     *
-     * @param User $user
-     * @return void
      */
     public function logout(User $user): void
     {
@@ -154,32 +181,28 @@ class AuthService
 
     /**
      * Authenticate user with OTP
-     *
-     * @param string $phone
-     * @param string $otpCode
-     * @return array
      */
     public function authenticateWithOtp(string $phone, string $otpCode): array
     {
         try {
-            $otpService = new OtpService();
+            $otpService = new OtpService;
             $result = $otpService->verifyOtp($phone, $otpCode);
-            
+
             return [
                 'success' => true,
                 'user' => $result['user'],
                 'token' => $result['token'],
-                'is_new_user' => $result['is_new_user']
+                'is_new_user' => $result['is_new_user'],
             ];
         } catch (ValidationException $e) {
             return [
                 'success' => false,
-                'message' => $e->getMessage()
+                'message' => $e->getMessage(),
             ];
         } catch (\Exception $e) {
             return [
                 'success' => false,
-                'message' => 'Authentication failed. Please try again.'
+                'message' => 'Authentication failed. Please try again.',
             ];
         }
     }
@@ -187,9 +210,6 @@ class AuthService
     /**
      * Complete registration for OTP users
      *
-     * @param User $user
-     * @param array $data
-     * @return User
      * @throws \Exception
      */
     public function completeRegistration(User $user, array $data): User
@@ -208,17 +228,17 @@ class AuthService
             if (isset($data['profile_private'])) {
                 $isPrivate = filter_var($data['profile_private'], FILTER_VALIDATE_BOOLEAN);
             }
-            
+
             $user->update([
                 'email' => $data['email'] ?? $user->email,
                 'registration_completed' => true,
                 'is_private' => $isPrivate,
-                'phone_verified_at' => now()
+                'phone_verified_at' => now(),
             ]);
 
             // Find country if provided
             $country_id = null;
-            if (!empty($data['country'])) {
+            if (! empty($data['country'])) {
                 $country = \App\Models\Country::where('name', $data['country'])
                     ->orWhere('code', $data['country'])
                     ->first();
@@ -230,7 +250,7 @@ class AuthService
 
             // Calculate age from date of birth
             $age = null;
-            if (!empty($data['dateOfBirth'])) {
+            if (! empty($data['dateOfBirth'])) {
                 $birthDate = new \DateTime($data['dateOfBirth']);
                 $today = new \DateTime('today');
                 $age = $birthDate->diff($today)->y;
@@ -254,7 +274,7 @@ class AuthService
                     'status' => $data['status'] ?? null,
                     'occupation' => $data['occupation'] ?? null,
                     'looking_for_relationship' => $data['lookingFor'] ?? 'open',
-                    'profile_completed_at' => now()
+                    'profile_completed_at' => now(),
                 ]
             );
 
@@ -264,18 +284,18 @@ class AuthService
                 [
                     'search_radius' => 10, // default value
                     'min_age' => 18,
-                    'max_age' => 99
+                    'max_age' => 99,
                 ]
             );
 
             // Handle photos if provided
-            if (isset($data['photos']) && is_array($data['photos']) && !empty($data['photos'])) {
-                $mainPhotoIndex = isset($data['mainPhotoIndex']) ? (int)$data['mainPhotoIndex'] : 0;
+            if (isset($data['photos']) && is_array($data['photos']) && ! empty($data['photos'])) {
+                $mainPhotoIndex = isset($data['mainPhotoIndex']) ? (int) $data['mainPhotoIndex'] : 0;
 
                 // Process each photo
                 foreach ($data['photos'] as $index => $photoData) {
                     // Skip if photo data is empty or invalid
-                    if (empty($photoData) || (!is_array($photoData) && !($photoData instanceof \Illuminate\Http\UploadedFile))) {
+                    if (empty($photoData) || (! is_array($photoData) && ! ($photoData instanceof \Illuminate\Http\UploadedFile))) {
                         continue;
                     }
 
@@ -308,11 +328,12 @@ class AuthService
                             $mediumUrl = $uploadResult['medium_url'];
 
                         } catch (\Exception $e) {
-                            \Log::error("Failed to upload photo: " . $e->getMessage());
+                            \Log::error('Failed to upload photo: '.$e->getMessage());
+
                             continue;
                         }
 
-                    } else if (is_array($photoData) && isset($photoData['name'])) {
+                    } elseif (is_array($photoData) && isset($photoData['name'])) {
                         // Handle photo data from mobile app
                         // For mobile uploads, we assume the file is already uploaded to R2
                         // and we just need to create the database record
@@ -320,8 +341,9 @@ class AuthService
                         $r2Path = "media/profile_photos/{$user->id}/{$filename}";
 
                         // Check if the file exists in R2
-                        if (!Storage::disk('r2')->exists($r2Path)) {
-                            \Log::warning("Photo file not found in R2: " . $r2Path);
+                        if (! Storage::disk('r2')->exists($r2Path)) {
+                            \Log::warning('Photo file not found in R2: '.$r2Path);
+
                             continue;
                         }
 

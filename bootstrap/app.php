@@ -46,6 +46,7 @@ return Application::configure(basePath: dirname(__DIR__))
         
         // Apply language middleware to web routes
         $middleware->web(append: [
+            \App\Http\Middleware\HandleInertiaRequests::class,
             \App\Http\Middleware\LanguageMiddleware::class,
             \App\Http\Middleware\SetLocale::class,
         ]);
