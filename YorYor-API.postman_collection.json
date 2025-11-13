@@ -1,0 +1,1328 @@
+{
+  "info": {
+    "name": "YorYor API",
+    "_postman_id": "yoryor-api-collection",
+    "description": "Complete API collection for YorYor dating application",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{auth_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "auth_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "user_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Authenticate (Send OTP)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"+998901234567\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/authenticate",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "authenticate"]
+            },
+            "description": "Send OTP to phone number for authentication"
+          }
+        },
+        {
+          "name": "Authenticate (Verify OTP)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"+998901234567\",\n  \"otp\": \"123456\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/authenticate",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "authenticate"]
+            },
+            "description": "Verify OTP and authenticate user"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.data && jsonData.data.token) {",
+                  "        pm.collectionVariables.set('auth_token', jsonData.data.token);",
+                  "        pm.collectionVariables.set('user_id', jsonData.data.user.id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Check Email Availability",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"test@example.com\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/check-email",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "check-email"]
+            }
+          }
+        },
+        {
+          "name": "Complete Registration",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"newuser@example.com\",\n  \"first_name\": \"John\",\n  \"last_name\": \"Doe\",\n  \"date_of_birth\": \"1995-05-15\",\n  \"gender\": \"male\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/complete-registration",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "complete-registration"]
+            }
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/logout",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "logout"]
+            }
+          }
+        },
+        {
+          "name": "Enable 2FA",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/2fa/enable",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "2fa", "enable"]
+            }
+          }
+        },
+        {
+          "name": "Verify 2FA Code",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"123456\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/2fa/verify",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "2fa", "verify"]
+            }
+          }
+        },
+        {
+          "name": "Disable 2FA",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"password\": \"password\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/2fa/disable",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "2fa", "disable"]
+            }
+          }
+        },
+        {
+          "name": "Get Home Stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/home-stats",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "home-stats"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Profile",
+      "item": [
+        {
+          "name": "Get My Profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/profile/me",
+              "host": ["{{base_url}}"],
+              "path": ["profile", "me"]
+            }
+          }
+        },
+        {
+          "name": "Get Profile Completion Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/profile/completion-status",
+              "host": ["{{base_url}}"],
+              "path": ["profile", "completion-status"]
+            }
+          }
+        },
+        {
+          "name": "Update Profile",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bio\": \"Updated bio\",\n  \"height\": 175,\n  \"looking_for\": \"serious relationship\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/profile/{{user_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["profile", "{{user_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Get Cultural Profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/profile/cultural",
+              "host": ["{{base_url}}"],
+              "path": ["profile", "cultural"]
+            }
+          }
+        },
+        {
+          "name": "Update Cultural Profile",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"religion\": \"Islam\",\n  \"religiosity_level\": \"moderate\",\n  \"prayer_frequency\": \"five_times_daily\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/profile/cultural",
+              "host": ["{{base_url}}"],
+              "path": ["profile", "cultural"]
+            }
+          }
+        },
+        {
+          "name": "Get Career Profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/profile/career",
+              "host": ["{{base_url}}"],
+              "path": ["profile", "career"]
+            }
+          }
+        },
+        {
+          "name": "Get User Profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/users/:userId/profile",
+              "host": ["{{base_url}}"],
+              "path": ["users", ":userId", "profile"],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": "2"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Video Calls",
+      "item": [
+        {
+          "name": "Get Video Call Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/video-call/token",
+              "host": ["{{base_url}}"],
+              "path": ["video-call", "token"]
+            }
+          }
+        },
+        {
+          "name": "Create Meeting",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customRoomId\": \"my-custom-room\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/video-call/create-meeting",
+              "host": ["{{base_url}}"],
+              "path": ["video-call", "create-meeting"]
+            }
+          }
+        },
+        {
+          "name": "Validate Meeting",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/video-call/validate-meeting/:meetingId",
+              "host": ["{{base_url}}"],
+              "path": ["video-call", "validate-meeting", ":meetingId"],
+              "variable": [
+                {
+                  "key": "meetingId",
+                  "value": "meeting-abc-123"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Initiate Call",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipient_id\": 2,\n  \"call_type\": \"video\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/video-call/initiate",
+              "host": ["{{base_url}}"],
+              "path": ["video-call", "initiate"]
+            }
+          }
+        },
+        {
+          "name": "Join Call",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/video-call/:callId/join",
+              "host": ["{{base_url}}"],
+              "path": ["video-call", ":callId", "join"],
+              "variable": [
+                {
+                  "key": "callId",
+                  "value": "1"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "End Call",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/video-call/:callId/end",
+              "host": ["{{base_url}}"],
+              "path": ["video-call", ":callId", "end"],
+              "variable": [
+                {
+                  "key": "callId",
+                  "value": "1"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Reject Call",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/video-call/:callId/reject",
+              "host": ["{{base_url}}"],
+              "path": ["video-call", ":callId", "reject"],
+              "variable": [
+                {
+                  "key": "callId",
+                  "value": "1"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Call History",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/video-call/history?page=1&per_page=20",
+              "host": ["{{base_url}}"],
+              "path": ["video-call", "history"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "per_page",
+                  "value": "20"
+                },
+                {
+                  "key": "call_status",
+                  "value": "completed",
+                  "disabled": true
+                },
+                {
+                  "key": "call_type",
+                  "value": "video",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Call Analytics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/video-call/analytics",
+              "host": ["{{base_url}}"],
+              "path": ["video-call", "analytics"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Verification",
+      "item": [
+        {
+          "name": "Get Verification Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/verification/status",
+              "host": ["{{base_url}}"],
+              "path": ["verification", "status"]
+            }
+          }
+        },
+        {
+          "name": "Get Verification Requirements",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/verification/requirements/:type",
+              "host": ["{{base_url}}"],
+              "path": ["verification", "requirements", ":type"],
+              "variable": [
+                {
+                  "key": "type",
+                  "value": "identity"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Submit Verification Request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "verification_type",
+                  "value": "identity",
+                  "type": "text"
+                },
+                {
+                  "key": "submitted_data[id_number]",
+                  "value": "ID123456",
+                  "type": "text"
+                },
+                {
+                  "key": "submitted_data[full_name]",
+                  "value": "John Doe",
+                  "type": "text"
+                },
+                {
+                  "key": "documents[]",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "user_notes",
+                  "value": "My ID card",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/verification/submit",
+              "host": ["{{base_url}}"],
+              "path": ["verification", "submit"]
+            }
+          }
+        },
+        {
+          "name": "Get Verification Requests",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/verification/requests",
+              "host": ["{{base_url}}"],
+              "path": ["verification", "requests"]
+            }
+          }
+        },
+        {
+          "name": "Get Single Verification Request",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/verification/requests/:verificationRequestId",
+              "host": ["{{base_url}}"],
+              "path": ["verification", "requests", ":verificationRequestId"],
+              "variable": [
+                {
+                  "key": "verificationRequestId",
+                  "value": "1"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Matching",
+      "item": [
+        {
+          "name": "Get Potential Matches",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/matches/potential",
+              "host": ["{{base_url}}"],
+              "path": ["matches", "potential"]
+            }
+          }
+        },
+        {
+          "name": "Get Matches",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/matches",
+              "host": ["{{base_url}}"],
+              "path": ["matches"]
+            }
+          }
+        },
+        {
+          "name": "Like User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"liked_user_id\": 2\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/likes",
+              "host": ["{{base_url}}"],
+              "path": ["likes"]
+            }
+          }
+        },
+        {
+          "name": "Dislike User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"disliked_user_id\": 3\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/dislikes",
+              "host": ["{{base_url}}"],
+              "path": ["dislikes"]
+            }
+          }
+        },
+        {
+          "name": "Get Received Likes",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/likes/received",
+              "host": ["{{base_url}}"],
+              "path": ["likes", "received"]
+            }
+          }
+        },
+        {
+          "name": "Get Sent Likes",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/likes/sent",
+              "host": ["{{base_url}}"],
+              "path": ["likes", "sent"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Chat",
+      "item": [
+        {
+          "name": "Get Chats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/chats",
+              "host": ["{{base_url}}"],
+              "path": ["chats"]
+            }
+          }
+        },
+        {
+          "name": "Get Single Chat",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/chats/:chatId",
+              "host": ["{{base_url}}"],
+              "path": ["chats", ":chatId"],
+              "variable": [
+                {
+                  "key": "chatId",
+                  "value": "1"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create or Get Chat",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": 2\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/chats/create",
+              "host": ["{{base_url}}"],
+              "path": ["chats", "create"]
+            }
+          }
+        },
+        {
+          "name": "Send Message",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Hello there!\",\n  \"type\": \"text\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/chats/:chatId/messages",
+              "host": ["{{base_url}}"],
+              "path": ["chats", ":chatId", "messages"],
+              "variable": [
+                {
+                  "key": "chatId",
+                  "value": "1"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Mark Messages as Read",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/chats/:chatId/read",
+              "host": ["{{base_url}}"],
+              "path": ["chats", ":chatId", "read"],
+              "variable": [
+                {
+                  "key": "chatId",
+                  "value": "1"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Unread Count",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/chats/unread-count",
+              "host": ["{{base_url}}"],
+              "path": ["chats", "unread-count"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Settings",
+      "item": [
+        {
+          "name": "Get All Settings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/settings",
+              "host": ["{{base_url}}"],
+              "path": ["settings"]
+            }
+          }
+        },
+        {
+          "name": "Update Settings",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"language\": \"en\",\n  \"theme\": \"dark\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/settings",
+              "host": ["{{base_url}}"],
+              "path": ["settings"]
+            }
+          }
+        },
+        {
+          "name": "Get Privacy Settings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/settings/privacy",
+              "host": ["{{base_url}}"],
+              "path": ["settings", "privacy"]
+            }
+          }
+        },
+        {
+          "name": "Update Privacy Settings",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"profile_visibility\": \"matches_only\",\n  \"show_online_status\": false\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/settings/privacy",
+              "host": ["{{base_url}}"],
+              "path": ["settings", "privacy"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Account",
+      "item": [
+        {
+          "name": "Change Password",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"current_password\": \"oldpassword\",\n  \"new_password\": \"NewPassword123!\",\n  \"new_password_confirmation\": \"NewPassword123!\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/account/password",
+              "host": ["{{base_url}}"],
+              "path": ["account", "password"]
+            }
+          }
+        },
+        {
+          "name": "Change Email",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"newemail@example.com\",\n  \"password\": \"password\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/account/email",
+              "host": ["{{base_url}}"],
+              "path": ["account", "email"]
+            }
+          }
+        },
+        {
+          "name": "Request Data Export",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/account/export-data",
+              "host": ["{{base_url}}"],
+              "path": ["account", "export-data"]
+            }
+          }
+        },
+        {
+          "name": "Delete Account",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/account",
+              "host": ["{{base_url}}"],
+              "path": ["account"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Safety & Panic Button",
+      "item": [
+        {
+          "name": "Activate Panic Button",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"location\": {\n    \"latitude\": 41.2995,\n    \"longitude\": 69.2401\n  },\n  \"message\": \"Need help!\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/safety/panic/activate",
+              "host": ["{{base_url}}"],
+              "path": ["safety", "panic", "activate"]
+            }
+          }
+        },
+        {
+          "name": "Cancel Panic Alert",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/safety/panic/cancel",
+              "host": ["{{base_url}}"],
+              "path": ["safety", "panic", "cancel"]
+            }
+          }
+        },
+        {
+          "name": "Get Panic Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/safety/panic/status",
+              "host": ["{{base_url}}"],
+              "path": ["safety", "panic", "status"]
+            }
+          }
+        },
+        {
+          "name": "Get Emergency Contacts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/safety/emergency-contacts",
+              "host": ["{{base_url}}"],
+              "path": ["safety", "emergency-contacts"]
+            }
+          }
+        },
+        {
+          "name": "Add Emergency Contact",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"John Doe\",\n  \"phone\": \"+998901234567\",\n  \"relationship\": \"friend\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/safety/emergency-contacts",
+              "host": ["{{base_url}}"],
+              "path": ["safety", "emergency-contacts"]
+            }
+          }
+        },
+        {
+          "name": "Get Safety Tips",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/safety/tips",
+              "host": ["{{base_url}}"],
+              "path": ["safety", "tips"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Public",
+      "item": [
+        {
+          "name": "Get Countries",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/countries",
+              "host": ["{{base_url}}"],
+              "path": ["countries"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

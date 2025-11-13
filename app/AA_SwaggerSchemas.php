@@ -1,5 +1,7 @@
 <?php
 
+namespace App;
+
 /**
  * @OA\Schema(
  *     schema="Error",
@@ -60,7 +62,11 @@
  *   @OA\Property(property="created_at", type="string", format="date-time"),
  *   @OA\Property(property="expires_at", type="string", format="date-time"),
  *   @OA\Property(property="status", type="string", example="active"),
- *   @OA\Property(property="is_expired", type="boolean", example=false),
- *   @OA\Property(property="user", ref="#/components/schemas/UserResource", nullable=true)
+ *   @OA\Property(property="is_expired", type="boolean", example=false)
  * )
- */ 
+ */
+
+class SwaggerSchemas
+{
+    // This class exists solely to hold Swagger schema annotations
+} 
