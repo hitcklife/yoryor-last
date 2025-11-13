@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import laravel from 'laravel-vite-plugin';
+import react from '@vitejs/plugin-react';
 import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
@@ -10,6 +11,7 @@ export default defineConfig({
                 'resources/css/components.css',
                 'resources/css/scrollbar.css',
                 'resources/js/app.js',
+                'resources/js/app.jsx',
                 'resources/js/landing.js'
             ],
             refresh: [
@@ -17,9 +19,11 @@ export default defineConfig({
                 'app/Livewire/**/*.php',
                 'app/Http/Livewire/**/*.php',
                 'resources/js/**/*.js',
+                'resources/js/**/*.jsx',
                 'resources/css/**/*.css'
             ],
         }),
+        react(),
         tailwindcss(),
     ],
     server: {
@@ -49,6 +53,7 @@ export default defineConfig({
             output: {
                 manualChunks: {
                     vendor: ['alpinejs', 'lucide'],
+                    react: ['react', 'react-dom', '@inertiajs/react'],
                 },
             },
         },
