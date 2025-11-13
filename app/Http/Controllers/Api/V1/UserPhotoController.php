@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\UserPhoto;
 use App\Services\ImageProcessingService;
+use App\Services\CacheService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
@@ -14,10 +15,12 @@ use Illuminate\Support\Facades\DB;
 class UserPhotoController extends Controller
 {
     protected $imageProcessingService;
+    protected $cacheService;
 
-    public function __construct(ImageProcessingService $imageProcessingService)
+    public function __construct(ImageProcessingService $imageProcessingService, CacheService $cacheService)
     {
         $this->imageProcessingService = $imageProcessingService;
+        $this->cacheService = $cacheService;
     }
 
     /**
@@ -191,6 +194,9 @@ class UserPhotoController extends Controller
                 ]);
             });
 
+            // Clear profile caches since photo affects profile data
+            $this->cacheService->invalidateUserCaches($user->id);
+
             return response()->json([
                 'status' => 'success',
                 'message' => 'Photo uploaded successfully',
@@ -289,27 +295,34 @@ class UserPhotoController extends Controller
             $user = $request->user();
             $size = $request->query('size', 'medium');
 
-            $photos = UserPhoto::where('user_id', $user->id)
-//                ->approved()
-                ->ordered()
-                ->get();
+            return $this->cacheService->remember(
+                "user_photos:{$user->id}:size:{$size}",
+                CacheService::TTL_MEDIUM,
+                function() use ($user, $size) {
+                    $photos = UserPhoto::where('user_id', $user->id)
+    //                ->approved()
+                        ->ordered()
+                        ->get();
 
-            // Transform the photos to include the appropriate image URL
-            $transformedPhotos = $photos->map(function ($photo) use ($size) {
-                $data = $photo->toArray();
-                $data['image_url'] = $this->imageProcessingService->getImageUrl(
-                    $photo->original_url,
-                    $photo->medium_url,
-                    $photo->thumbnail_url,
-                    $size
-                );
-                return $data;
-            });
+                    // Transform the photos to include the appropriate image URL
+                    $transformedPhotos = $photos->map(function ($photo) use ($size) {
+                        $data = $photo->toArray();
+                        $data['image_url'] = $this->imageProcessingService->getImageUrl(
+                            $photo->original_url,
+                            $photo->medium_url,
+                            $photo->thumbnail_url,
+                            $size
+                        );
+                        return $data;
+                    });
 
-            return response()->json([
-                'status' => 'success',
-                'data' => $transformedPhotos
-            ]);
+                    return response()->json([
+                        'status' => 'success',
+                        'data' => $transformedPhotos
+                    ]);
+                },
+                ["user_{$user->id}_profile"]
+            );
 
         } catch (\Exception $e) {
             return response()->json([
@@ -422,6 +435,9 @@ class UserPhotoController extends Controller
                 $photo->delete();
             });
 
+            // Clear profile caches since photo deletion affects profile data
+            $this->cacheService->invalidateUserCaches($user->id);
+
             return response()->json([
                 'status' => 'success',
                 'message' => 'Photo deleted successfully'
@@ -516,6 +532,9 @@ class UserPhotoController extends Controller
                 // Update the photo
                 $photo->update($request->only(['is_profile_photo', 'order', 'is_private']));
             });
+
+            // Clear profile caches since photo update affects profile data
+            $this->cacheService->invalidateUserCaches($user->id);
 
             return response()->json([
                 'status' => 'success',

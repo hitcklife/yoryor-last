@@ -9,6 +9,7 @@ use App\Models\Like;
 use App\Models\Dislike;
 use App\Models\MatchModel;
 use App\Models\User;
+use App\Services\CacheService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -21,6 +22,12 @@ use Illuminate\Support\Facades\DB;
  */
 class LikeController extends Controller
 {
+    protected $cacheService;
+
+    public function __construct(CacheService $cacheService)
+    {
+        $this->cacheService = $cacheService;
+    }
     /**
      * Like a user
      *
@@ -137,6 +144,10 @@ class LikeController extends Controller
                 'liked_user_id' => $likedUserId,
                 'liked_at' => now()
             ]);
+
+            // Clear potential matches cache for both users (this affects who can be shown as potential matches)
+            $this->cacheService->invalidateUserCaches($user->id);
+            $this->cacheService->invalidateUserCaches($likedUserId);
 
             // Get the liked user for broadcasting
             $likedUser = User::find($likedUserId);
@@ -377,6 +388,10 @@ class LikeController extends Controller
                 'disliked_user_id' => $dislikedUserId
             ]);
 
+            // Clear potential matches cache for both users (this affects who can be shown as potential matches)
+            $this->cacheService->invalidateUserCaches($user->id);
+            $this->cacheService->invalidateUserCaches($dislikedUserId);
+
             return response()->json([
                 'status' => 'success',
                 'message' => 'User disliked successfully',
@@ -478,40 +493,49 @@ class LikeController extends Controller
      */
     public function getReceivedLikes(Request $request)
     {
-        // Check if the user is authorized to view likes
-//        $this->authorize('viewAny', Like::class);
         try {
             $user = $request->user();
             $perPage = $request->input('per_page', 10);
+            $page = $request->input('page', 1);
 
-            $likes = Like::where('liked_user_id', $user->id)
-                ->whereNotExists(function ($query) use ($user) {
-                    $query->select('id')
-                        ->from('matches')
-                        ->where(function ($q) use ($user) {
-                            $q->where('user_id', $user->id)
-                                ->whereColumn('matched_user_id', 'likes.user_id');
+            return $this->cacheService->remember(
+                "received_likes:{$user->id}:page:{$page}:per:{$perPage}",
+                CacheService::TTL_SHORT,
+                function() use ($user, $perPage) {
+                    $likes = Like::where('liked_user_id', $user->id)
+                        ->whereNotExists(function ($query) use ($user) {
+                            $query->select('id')
+                                ->from('matches')
+                                ->where(function ($q) use ($user) {
+                                    $q->where('user_id', $user->id)
+                                        ->whereColumn('matched_user_id', 'likes.user_id');
+                                })
+                                ->orWhere(function ($q) use ($user) {
+                                    $q->where('matched_user_id', $user->id)
+                                        ->whereColumn('user_id', 'likes.user_id');
+                                });
                         })
-                        ->orWhere(function ($q) use ($user) {
-                            $q->where('matched_user_id', $user->id)
-                                ->whereColumn('user_id', 'likes.user_id');
-                        });
-                })
-                ->with(['user.profile', 'user.profilePhoto:id,user_id,original_url,thumbnail_url,medium_url,is_profile_photo'])
-                ->paginate($perPage);
+                        ->with(['user.profile', 'user.profilePhoto:id,user_id,original_url,thumbnail_url,medium_url,is_profile_photo'])
+                        ->paginate($perPage);
 
-            return response()->json([
-                'status' => 'success',
-                'data' => [
-                    'likes' => $likes->items(),
-                    'pagination' => [
-                        'total' => $likes->total(),
-                        'per_page' => $likes->perPage(),
-                        'current_page' => $likes->currentPage(),
-                        'last_page' => $likes->lastPage()
-                    ]
-                ]
-            ]);
+                    return response()->json([
+                        'status' => 'success',
+                        'data' => [
+                            'likes' => $likes->items(),
+                            'pagination' => [
+                                'total' => $likes->total(),
+                                'per_page' => $likes->perPage(),
+                                'current_page' => $likes->currentPage(),
+                                'last_page' => $likes->lastPage(),
+                                'has_more_pages' => $likes->hasMorePages(),
+                                'from' => $likes->firstItem(),
+                                'to' => $likes->lastItem()
+                            ]
+                        ]
+                    ]);
+                },
+                ["user_{$user->id}_likes"]
+            );
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
@@ -606,33 +630,91 @@ class LikeController extends Controller
      */
     public function getSentLikes(Request $request)
     {
-        // Check if the user is authorized to view likes
-//        $this->authorize('viewAny', Like::class);
-
         try {
             $user = $request->user();
             $perPage = $request->input('per_page', 10);
+            $page = $request->input('page', 1);
 
-            $likes = Like::where('user_id', $user->id)
-                ->with(['likedUser.profile', 'likedUser.profilePhoto:id,user_id,original_url,thumbnail_url,medium_url,is_profile_photo'])
-                ->paginate($perPage);
+            return $this->cacheService->remember(
+                "sent_likes:{$user->id}:page:{$page}:per:{$perPage}",
+                CacheService::TTL_SHORT,
+                function() use ($user, $perPage) {
+                    $likes = Like::where('user_id', $user->id)
+                        ->with(['likedUser.profile', 'likedUser.profilePhoto:id,user_id,original_url,thumbnail_url,medium_url,is_profile_photo'])
+                        ->paginate($perPage);
 
-            return response()->json([
-                'status' => 'success',
-                'data' => [
-                    'likes' => $likes->items(),
-                    'pagination' => [
-                        'total' => $likes->total(),
-                        'per_page' => $likes->perPage(),
-                        'current_page' => $likes->currentPage(),
-                        'last_page' => $likes->lastPage()
-                    ]
-                ]
-            ]);
+                    return response()->json([
+                        'status' => 'success',
+                        'data' => [
+                            'likes' => $likes->items(),
+                            'pagination' => [
+                                'total' => $likes->total(),
+                                'per_page' => $likes->perPage(),
+                                'current_page' => $likes->currentPage(),
+                                'last_page' => $likes->lastPage(),
+                                'has_more_pages' => $likes->hasMorePages(),
+                                'from' => $likes->firstItem(),
+                                'to' => $likes->lastItem()
+                            ]
+                        ]
+                    ]);
+                },
+                ["user_{$user->id}_likes"]
+            );
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to get sent likes',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Pass/reject a user (create dislike)
+     */
+    public function pass(User $user)
+    {
+        try {
+            $currentUser = Auth::user();
+            
+            // Check if user is trying to pass themselves
+            if ($currentUser->id === $user->id) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'You cannot pass yourself'
+                ], 400);
+            }
+
+            // Check if already passed/disliked
+            $existingDislike = \App\Models\Dislike::where('user_id', $currentUser->id)
+                ->where('disliked_user_id', $user->id)
+                ->exists();
+
+            if ($existingDislike) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'You have already passed this user'
+                ], 400);
+            }
+
+            // Create dislike record
+            \App\Models\Dislike::create([
+                'user_id' => $currentUser->id,
+                'disliked_user_id' => $user->id
+            ]);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'User passed successfully'
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Error passing user: ' . $e->getMessage());
+            
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to pass user',
                 'error' => $e->getMessage()
             ], 500);
         }

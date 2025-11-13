@@ -6,12 +6,21 @@ use App\Http\Controllers\Controller;
 use App\Models\UserFeedback;
 use App\Models\UserReport;
 use App\Models\User;
+use App\Services\CacheService;
+use App\Services\ErrorHandlingService;
+use App\Services\ValidationService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
 
 class SupportController extends Controller
 {
+    private CacheService $cacheService;
+
+    public function __construct(CacheService $cacheService)
+    {
+        $this->cacheService = $cacheService;
+    }
     /**
      * Submit feedback
      *
@@ -20,36 +29,43 @@ class SupportController extends Controller
      */
     public function submitFeedback(Request $request): JsonResponse
     {
-        // Validate the request data
-        $validator = Validator::make($request->all(), [
-            'feedback_text' => 'required|string|min:10',
-            'email' => 'nullable|email',
-        ]);
+        try {
+            $user = $request->user();
 
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'errors' => $validator->errors()
-            ], 422);
+            // Enhanced validation using ValidationService
+            $validated = ValidationService::validateRequest($request, [
+                'feedback_text' => 'required|string|min:10|max:2000',
+                'email' => 'nullable|email',
+                'category' => 'nullable|string|in:bug,feature,complaint,suggestion,other',
+                'rating' => 'nullable|integer|min:1|max:5'
+            ], [
+                'feedback_text.required' => 'Feedback text is required',
+                'feedback_text.min' => 'Feedback must be at least 10 characters',
+                'feedback_text.max' => 'Feedback cannot exceed 2000 characters',
+                'email.email' => 'Please provide a valid email address',
+                'category.in' => 'Invalid feedback category',
+                'rating.between' => 'Rating must be between 1 and 5'
+            ]);
+
+            $feedback = UserFeedback::create([
+                'user_id' => $user?->id,
+                'feedback_text' => $validated['feedback_text'],
+                'email' => $validated['email'] ?? $user?->email,
+                'category' => $validated['category'] ?? 'other',
+                'rating' => $validated['rating'] ?? null,
+                'submitted_at' => now(),
+                'user_agent' => $request->userAgent(),
+                'ip_address' => $request->ip()
+            ]);
+
+            return ErrorHandlingService::successResponse([
+                'feedback_id' => $feedback->id,
+                'submitted_at' => $feedback->submitted_at
+            ], 'Feedback submitted successfully', 201);
+
+        } catch (\Exception $e) {
+            return ErrorHandlingService::handleException($e, 'submit_feedback');
         }
-
-        $feedback = new UserFeedback([
-            'feedback_text' => $request->feedback_text,
-            'email' => $request->email,
-        ]);
-
-        // If user is authenticated, associate the feedback with them
-        if ($request->user()) {
-            $feedback->user_id = $request->user()->id;
-        }
-
-        $feedback->save();
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Feedback submitted successfully',
-            'data' => $feedback
-        ]);
     }
 
     /**
@@ -71,7 +87,7 @@ class SupportController extends Controller
 
         if ($validator->fails()) {
             return response()->json([
-                'success' => false,
+                'status' => 'error',
                 'errors' => $validator->errors()
             ], 422);
         }
@@ -79,7 +95,7 @@ class SupportController extends Controller
         // Check if trying to report self
         if ($user->id == $request->reported_id) {
             return response()->json([
-                'success' => false,
+                'status' => 'error',
                 'message' => 'You cannot report yourself'
             ], 422);
         }
@@ -87,7 +103,7 @@ class SupportController extends Controller
         // Check if already reported
         if (UserReport::hasReported($user->id, $request->reported_id)) {
             return response()->json([
-                'success' => false,
+                'status' => 'error',
                 'message' => 'You have already reported this user'
             ], 422);
         }
@@ -104,7 +120,7 @@ class SupportController extends Controller
         $report->save();
 
         return response()->json([
-            'success' => true,
+            'status' => 'success',
             'message' => 'User reported successfully',
             'data' => $report
         ]);
@@ -158,7 +174,7 @@ class SupportController extends Controller
         ];
 
         return response()->json([
-            'success' => true,
+            'status' => 'success',
             'data' => $faqData
         ]);
     }

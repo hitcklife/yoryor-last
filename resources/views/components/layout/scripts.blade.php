@@ -1,0 +1,1 @@
+<!-- JavaScript is now loaded via Vite in resources/js/landing.js -->

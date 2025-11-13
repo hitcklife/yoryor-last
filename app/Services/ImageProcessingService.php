@@ -52,7 +52,7 @@ class ImageProcessingService
     }
     
     /**
-     * Delete image files from S3 storage
+     * Delete image files from Cloudflare R2 storage
      *
      * @param array $filePaths
      * @return bool
@@ -72,7 +72,7 @@ class ImageProcessingService
      */
     public function extractFilePaths(string $originalUrl, string $mediumUrl, string $thumbnailUrl): array
     {
-        // Extract S3 paths from URLs
+        // Extract R2 paths from URLs
         $originalPath = $this->extractS3PathFromUrl($originalUrl);
         $mediumPath = $this->extractS3PathFromUrl($mediumUrl);
         $thumbnailPath = $this->extractS3PathFromUrl($thumbnailUrl);
@@ -85,7 +85,7 @@ class ImageProcessingService
     }
     
     /**
-     * Extract S3 path from URL
+     * Extract R2 path from URL
      *
      * @param string $url
      * @return string|null
@@ -105,9 +105,9 @@ class ImageProcessingService
         // Remove leading slash from path
         $path = ltrim($parsedUrl['path'], '/');
         
-        // If using CloudFront or custom domain, the path might be the full S3 key
-        // If using direct S3 URLs, we might need to remove the bucket name
-        $bucketName = config('filesystems.disks.s3.bucket');
+        // If using Cloudflare custom domain, the path might be the full R2 key
+        // If using direct R2 URLs, we might need to remove the bucket name
+        $bucketName = config('filesystems.disks.r2.bucket');
         if ($bucketName && str_starts_with($path, $bucketName . '/')) {
             $path = substr($path, strlen($bucketName) + 1);
         }

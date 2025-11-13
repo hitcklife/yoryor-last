@@ -73,7 +73,8 @@ class NewMessageEvent implements ShouldBroadcast
      */
     public function broadcastAs()
     {
-        return 'MessageSent';
+        // Use 'NewMessage' for user channels to match NewLike pattern
+        return 'NewMessage';
     }
 
     /**
@@ -86,10 +87,41 @@ class NewMessageEvent implements ShouldBroadcast
         // Load the chat relationship for the response
         $this->message->load('chat:id,name,created_at,updated_at,last_activity_at');
 
+        // Get sender profile photo URL
+        $senderPhotoUrl = null;
+        if ($this->message->sender && $this->message->sender->profilePhoto) {
+            $senderPhotoUrl = $this->message->sender->profilePhoto->thumbnail_url;
+        }
+
+        // Get sender's full name
+        $senderName = null;
+        if ($this->message->sender && $this->message->sender->profile) {
+            $senderName = $this->message->sender->profile->first_name . ' ' . $this->message->sender->profile->last_name;
+        }
+
         return [
-            'message' => $this->message,
-            'chat_id' => $this->message->chat_id,
-            'sender_id' => $this->message->sender_id
+            'message' => [
+                'id' => $this->message->id,
+                'chat_id' => $this->message->chat_id,
+                'sender_id' => $this->message->sender_id,
+                'content' => $this->message->content,
+                'type' => $this->message->type,
+                'metadata' => $this->message->metadata,
+                'is_read' => $this->message->is_read,
+                'created_at' => $this->message->created_at,
+                'updated_at' => $this->message->updated_at,
+            ],
+            'sender' => [
+                'id' => $this->message->sender_id,
+                'name' => $senderName,
+                'profile_photo' => $senderPhotoUrl,
+            ],
+            'chat' => [
+                'id' => $this->message->chat_id,
+                'name' => $this->message->chat->name ?? null,
+                'last_activity_at' => $this->message->chat->last_activity_at ?? null,
+            ],
+            'timestamp' => now()->toIso8601String()
         ];
     }
 }

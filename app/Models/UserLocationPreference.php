@@ -18,12 +18,16 @@ class UserLocationPreference extends Model
         'uzbekistan_visit_frequency',
         'willing_to_relocate',
         'relocation_countries',
+        'preferred_locations',
+        'live_with_family',
+        'future_location_plans',
     ];
 
     protected $casts = [
-        'willing_to_relocate' => 'boolean',
         'years_in_current_country' => 'integer',
         'relocation_countries' => 'array',
+        'preferred_locations' => 'array',
+        'live_with_family' => 'boolean',
     ];
 
     public function user(): BelongsTo

@@ -40,16 +40,30 @@ class VideoCallController extends Controller
             $token = $this->videoSDKService->generateToken();
 
             return response()->json([
-                'token' => $token,
-                'success' => true
+                'status' => 'success',
+                'data' => [
+                    'token' => $token
+                ]
             ]);
         } catch (Exception $e) {
             Log::error('Failed to generate Video SDK token: ' . $e->getMessage(), [
-                'user_id' => $user->id
+                'user_id' => $user->id,
+                'error' => $e->getMessage()
             ]);
+            
+            // Check if it's a configuration issue
+            if (str_contains($e->getMessage(), 'not configured')) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'VideoSDK is not configured. Please set VIDEOSDK_API_KEY and VIDEOSDK_SECRET_KEY in your .env file.',
+                    'error' => 'Configuration missing'
+                ], 500);
+            }
+            
             return response()->json([
-                'error' => 'Failed to generate token',
-                'success' => false
+                'status' => 'error',
+                'message' => 'Failed to generate token: ' . $e->getMessage(),
+                'error' => $e->getMessage()
             ], 500);
         }
     }
@@ -72,9 +86,11 @@ class VideoCallController extends Controller
             $meetingData = $this->videoSDKService->createMeeting($request->input('customRoomId'));
 
             return response()->json([
-                'meetingId' => $meetingData['meetingId'],
-                'token' => $meetingData['token'],
-                'success' => true
+                'status' => 'success',
+                'data' => [
+                    'meetingId' => $meetingData['meetingId'],
+                    'token' => $meetingData['token']
+                ]
             ]);
         } catch (Exception $e) {
             Log::error('Failed to create meeting: ' . $e->getMessage(), [
@@ -82,8 +98,9 @@ class VideoCallController extends Controller
                 'customRoomId' => $request->input('customRoomId')
             ]);
             return response()->json([
-                'error' => 'Failed to create meeting',
-                'success' => false
+                'status' => 'error',
+                'message' => 'Failed to create meeting',
+                'error' => 'Failed to create meeting'
             ], 500);
         }
     }
@@ -102,9 +119,11 @@ class VideoCallController extends Controller
             $validationData = $this->videoSDKService->validateMeeting($meetingId);
 
             return response()->json([
-                'valid' => $validationData['valid'],
-                'meetingId' => $validationData['meetingId'],
-                'success' => true
+                'status' => 'success',
+                'data' => [
+                    'valid' => $validationData['valid'],
+                    'meetingId' => $validationData['meetingId']
+                ]
             ]);
         } catch (Exception $e) {
             Log::error('Failed to validate meeting: ' . $e->getMessage(), [
@@ -112,8 +131,9 @@ class VideoCallController extends Controller
                 'meetingId' => $meetingId
             ]);
             return response()->json([
-                'error' => 'Failed to validate meeting',
-                'success' => false
+                'status' => 'error',
+                'message' => 'Failed to validate meeting',
+                'error' => 'Failed to validate meeting'
             ], 500);
         }
     }
@@ -144,13 +164,14 @@ class VideoCallController extends Controller
         }
 
         // Check if there's already an active call between these users
-        $existingCall = Call::where(function ($query) use ($caller, $receiverId) {
-            $query->where('caller_id', $caller->id)->where('receiver_id', $receiverId);
-        })->whereIn('status', ['initiated', 'ongoing'])
+        $existingCall = Call::with(['caller.profile', 'receiver.profile'])
+            ->where(function ($query) use ($caller, $receiverId) {
+                $query->where('caller_id', $caller->id)->where('receiver_id', $receiverId);
+            })->whereIn('status', ['initiated', 'ongoing'])
             ->orWhere(function ($query) use ($caller, $receiverId) {
-            $query->where('caller_id', $receiverId)->where('receiver_id', $caller->id);
-        })->whereIn('status', ['initiated', 'ongoing'])
-          ->first();
+                $query->where('caller_id', $receiverId)->where('receiver_id', $caller->id);
+            })->whereIn('status', ['initiated', 'ongoing'])
+            ->first();
 
         if ($existingCall) {
             // Instead of returning an error, return the existing call details
@@ -168,12 +189,12 @@ class VideoCallController extends Controller
                         'token' => $token,
                         'type' => $existingCall->type,
                         'caller' => [
-                            'id' => $existingCall->caller_id === $caller->id ? $caller->id : $receiverId,
-                            'name' => $existingCall->caller_id === $caller->id ? $caller->full_name : User::with('profile')->find($receiverId)->full_name,
+                            'id' => $existingCall->caller->id,
+                            'name' => $existingCall->caller->full_name,
                         ],
                         'receiver' => [
-                            'id' => $existingCall->receiver_id === $caller->id ? $caller->id : $receiverId,
-                            'name' => $existingCall->receiver_id === $caller->id ? $caller->full_name : User::with('profile')->find($receiverId)->full_name,
+                            'id' => $existingCall->receiver->id,
+                            'name' => $existingCall->receiver->full_name,
                         ],
                     ]
                 ]);
@@ -311,7 +332,7 @@ class VideoCallController extends Controller
      */
     public function endCall(int $callId): JsonResponse
     {
-        $call = Call::findOrFail($callId);
+        $call = Call::with(['caller.profile', 'receiver.profile'])->findOrFail($callId);
         $user = Auth::user();
 
         // Check if the user is part of the call
@@ -372,7 +393,7 @@ class VideoCallController extends Controller
      */
     public function rejectCall(int $callId): JsonResponse
     {
-        $call = Call::findOrFail($callId);
+        $call = Call::with(['caller.profile', 'receiver.profile'])->findOrFail($callId);
         $user = Auth::user();
 
         // Check if the user is the receiver of the call
@@ -429,7 +450,7 @@ class VideoCallController extends Controller
      */
     public function handleMissedCall(int $callId): JsonResponse
     {
-        $call = Call::findOrFail($callId);
+        $call = Call::with(['caller.profile', 'receiver.profile'])->findOrFail($callId);
 
         // Check if call can be marked as missed
         if ($call->status !== 'initiated') {

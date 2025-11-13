@@ -596,7 +596,7 @@ class MediaUploadService
     }
     
     /**
-     * Upload file to S3
+     * Upload file to Cloudflare R2
      *
      * @param mixed $content
      * @param string $path
@@ -605,20 +605,20 @@ class MediaUploadService
     private function uploadToS3($content, string $path): string
     {
         try {
-            $uploaded = Storage::disk('s3')->put($path, $content);
+            $uploaded = Storage::disk('r2')->put($path, $content);
             
             if (!$uploaded) {
-                throw new Exception('Failed to upload file to S3');
+                throw new Exception('Failed to upload file to Cloudflare R2');
             }
             
-            return Storage::disk('s3')->url($path);
+            return Storage::disk('r2')->url($path);
             
         } catch (Exception $e) {
-            Log::error('S3 upload failed', [
+            Log::error('Cloudflare R2 upload failed', [
                 'path' => $path,
                 'error' => $e->getMessage()
             ]);
-            throw new Exception('Failed to upload file to S3: ' . $e->getMessage());
+            throw new Exception('Failed to upload file to Cloudflare R2: ' . $e->getMessage());
         }
     }
     
@@ -801,7 +801,7 @@ class MediaUploadService
     }
     
     /**
-     * Delete media files from S3
+     * Delete media files from Cloudflare R2
      *
      * @param array $filePaths
      * @return bool
@@ -814,32 +814,32 @@ class MediaUploadService
             
             foreach ($filePaths as $path) {
                 if (empty($path) || !is_string($path)) {
-                    Log::warning("Invalid S3 path provided for deletion: " . json_encode($path));
+                    Log::warning("Invalid R2 path provided for deletion: " . json_encode($path));
                     continue;
                 }
                 
                 try {
-                    if (Storage::disk('s3')->exists($path)) {
-                        Storage::disk('s3')->delete($path);
+                    if (Storage::disk('r2')->exists($path)) {
+                        Storage::disk('r2')->delete($path);
                         $deletedFiles[] = $path;
-                        Log::info("Successfully deleted S3 file: " . $path);
+                        Log::info("Successfully deleted R2 file: " . $path);
                     } else {
-                        Log::warning("S3 file not found for deletion: " . $path);
+                        Log::warning("R2 file not found for deletion: " . $path);
                     }
                 } catch (Exception $e) {
                     $failedFiles[] = $path;
-                    Log::error("Failed to delete S3 file: " . $path . " - " . $e->getMessage());
+                    Log::error("Failed to delete R2 file: " . $path . " - " . $e->getMessage());
                 }
             }
             
             if (!empty($failedFiles)) {
-                Log::warning("Some files failed to delete from S3: " . implode(', ', $failedFiles));
+                Log::warning("Some files failed to delete from R2: " . implode(', ', $failedFiles));
                 return false;
             }
             
             return true;
         } catch (Exception $e) {
-            Log::error("Failed to delete media files from S3: " . $e->getMessage(), [
+            Log::error("Failed to delete media files from R2: " . $e->getMessage(), [
                 'file_paths' => $filePaths,
                 'exception' => $e
             ]);

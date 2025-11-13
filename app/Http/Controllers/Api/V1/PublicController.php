@@ -18,7 +18,7 @@ class PublicController extends Controller
         $countries = Country::all();
 
         return response()->json([
-            'success' => true,
+            'status' => 'success',
             'data' => $countries
         ]);
     }

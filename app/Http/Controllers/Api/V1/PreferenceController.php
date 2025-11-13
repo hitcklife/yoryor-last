@@ -4,12 +4,19 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\UserPreference;
+use App\Services\CacheService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
 
 class PreferenceController extends Controller
 {
+    protected $cacheService;
+
+    public function __construct(CacheService $cacheService)
+    {
+        $this->cacheService = $cacheService;
+    }
     /**
      * Get the authenticated user's preferences
      *
@@ -18,20 +25,36 @@ class PreferenceController extends Controller
      */
     public function getPreferences(Request $request): JsonResponse
     {
-        $user = $request->user();
-        $preferences = $user->preference;
+        try {
+            $user = $request->user();
 
-        if (!$preferences) {
-            // Create default preferences if none exist
-            $preferences = UserPreference::create([
-                'user_id' => $user->id,
-            ]);
+            return $this->cacheService->remember(
+                "user_preferences:{$user->id}",
+                CacheService::TTL_MEDIUM,
+                function() use ($user) {
+                    $preferences = $user->preference;
+
+                    if (!$preferences) {
+                        // Create default preferences if none exist
+                        $preferences = UserPreference::create([
+                            'user_id' => $user->id,
+                        ]);
+                    }
+
+                    return response()->json([
+                        'status' => 'success',
+                        'data' => $preferences
+                    ]);
+                },
+                ["user_{$user->id}_preferences"]
+            );
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to get preferences',
+                'error' => $e->getMessage()
+            ], 500);
         }
-
-        return response()->json([
-            'success' => true,
-            'data' => $preferences
-        ]);
     }
 
     /**
@@ -62,7 +85,8 @@ class PreferenceController extends Controller
 
         if ($validator->fails()) {
             return response()->json([
-                'success' => false,
+                'status' => 'error',
+                'message' => 'Validation failed',
                 'errors' => $validator->errors()
             ], 422);
         }
@@ -77,8 +101,11 @@ class PreferenceController extends Controller
         $preferences->fill($validator->validated());
         $preferences->save();
 
+        // Clear user preferences cache
+        $this->cacheService->invalidateUserCaches($user->id);
+
         return response()->json([
-            'success' => true,
+            'status' => 'success',
             'message' => 'Preferences updated successfully',
             'data' => $preferences
         ]);

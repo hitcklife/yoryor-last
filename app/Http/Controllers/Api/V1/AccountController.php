@@ -5,14 +5,25 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\DataExportRequest;
 use App\Models\User;
+use App\Services\CacheService;
+use App\Services\ErrorHandlingService;
+use App\Services\ValidationService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Notification;
+use App\Notifications\PasswordChangedNotification;
 
 class AccountController extends Controller
 {
+    private CacheService $cacheService;
+
+    public function __construct(CacheService $cacheService)
+    {
+        $this->cacheService = $cacheService;
+    }
     /**
      * Change user password
      *
@@ -21,37 +32,55 @@ class AccountController extends Controller
      */
     public function changePassword(Request $request): JsonResponse
     {
-        $user = $request->user();
+        try {
+            $user = $request->user();
 
-        // Validate the request data
-        $validator = Validator::make($request->all(), [
-            'current_password' => 'required|string',
-            'new_password' => 'required|string|min:8|confirmed',
-        ]);
+            // Enhanced validation using ValidationService
+            $validated = ValidationService::validateRequest($request, [
+                'current_password' => 'required|string',
+                'new_password' => 'required|string|min:8|confirmed|different:current_password',
+            ], [
+                'current_password.required' => 'Current password is required',
+                'new_password.required' => 'New password is required',
+                'new_password.min' => 'New password must be at least 8 characters',
+                'new_password.confirmed' => 'New password confirmation does not match',
+                'new_password.different' => 'New password must be different from current password'
+            ]);
 
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'errors' => $validator->errors()
-            ], 422);
+            // Check if current password is correct
+            if (!Hash::check($validated['current_password'], $user->password)) {
+                return ErrorHandlingService::errorResponse(
+                    'Current password is incorrect',
+                    ErrorHandlingService::ERROR_CODES['INVALID_CREDENTIALS'],
+                    null,
+                    401
+                );
+            }
+
+            // Update password with transaction for safety
+            \DB::transaction(function() use ($user, $validated) {
+                $user->update([
+                    'password' => Hash::make($validated['new_password']),
+                    'password_changed_at' => now()
+                ]);
+
+                // Revoke all other sessions for security
+                $user->tokens()->where('id', '!=', $user->currentAccessToken()->id)->delete();
+            });
+
+            // Send notification
+            $user->notify(new PasswordChangedNotification());
+
+            // Clear user caches
+            $this->cacheService->invalidateUserCaches($user->id);
+
+            return ErrorHandlingService::successResponse(
+                ['password_changed_at' => $user->password_changed_at],
+                'Password changed successfully'
+            );
+        } catch (\Exception $e) {
+            return ErrorHandlingService::handleException($e, 'change_password');
         }
-
-        // Check if current password is correct
-        if (!Hash::check($request->current_password, $user->password)) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Current password is incorrect'
-            ], 422);
-        }
-
-        // Update password
-        $user->password = Hash::make($request->new_password);
-        $user->save();
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Password changed successfully'
-        ]);
     }
 
     /**
@@ -72,7 +101,7 @@ class AccountController extends Controller
 
         if ($validator->fails()) {
             return response()->json([
-                'success' => false,
+                'status' => 'error',
                 'errors' => $validator->errors()
             ], 422);
         }
@@ -80,9 +109,10 @@ class AccountController extends Controller
         // Check if password is correct
         if (!Hash::check($request->password, $user->password)) {
             return response()->json([
-                'success' => false,
-                'message' => 'Password is incorrect'
-            ], 422);
+                'status' => 'error',
+                'message' => 'Invalid credentials',
+                'error_code' => 'INVALID_CREDENTIALS'
+            ], 401);
         }
 
         // Update email
@@ -90,7 +120,7 @@ class AccountController extends Controller
         $user->save();
 
         return response()->json([
-            'success' => true,
+            'status' => 'success',
             'message' => 'Email changed successfully'
         ]);
     }
@@ -113,7 +143,7 @@ class AccountController extends Controller
 
         if ($validator->fails()) {
             return response()->json([
-                'success' => false,
+                'status' => 'error',
                 'errors' => $validator->errors()
             ], 422);
         }
@@ -121,9 +151,10 @@ class AccountController extends Controller
         // Check if password is correct
         if (!Hash::check($request->password, $user->password)) {
             return response()->json([
-                'success' => false,
-                'message' => 'Password is incorrect'
-            ], 422);
+                'status' => 'error',
+                'message' => 'Invalid credentials',
+                'error_code' => 'INVALID_CREDENTIALS'
+            ], 401);
         }
 
         // Log the deletion reason if provided
@@ -140,7 +171,7 @@ class AccountController extends Controller
         $user->delete();
 
         return response()->json([
-            'success' => true,
+            'status' => 'success',
             'message' => 'Account deleted successfully'
         ]);
     }
@@ -162,7 +193,7 @@ class AccountController extends Controller
 
         if ($pendingRequest) {
             return response()->json([
-                'success' => false,
+                'status' => 'error',
                 'message' => 'You already have a pending data export request',
                 'data' => [
                     'request_id' => $pendingRequest->id,
@@ -182,7 +213,7 @@ class AccountController extends Controller
         // For now, we'll just return a success response
 
         return response()->json([
-            'success' => true,
+            'status' => 'success',
             'message' => 'Data export request submitted successfully',
             'data' => [
                 'request_id' => $exportRequest->id,

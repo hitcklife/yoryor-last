@@ -122,8 +122,16 @@ class ChatRateLimit
      */
     private function getRetryAfter(string $key, int $decayMinutes): int
     {
-        $ttl = Cache::store()->getRedis()->ttl($key);
-        return $ttl > 0 ? ceil($ttl / 60) : $decayMinutes;
+        try {
+            $store = Cache::store();
+            if (method_exists($store, 'getRedis')) {
+                $ttl = $store->getRedis()->ttl($key);
+                return $ttl > 0 ? ceil($ttl / 60) : $decayMinutes;
+            }
+            return $decayMinutes;
+        } catch (\Exception $e) {
+            return $decayMinutes;
+        }
     }
 
     /**

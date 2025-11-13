@@ -139,7 +139,7 @@ class MatchResource extends JsonResource
                         'latitude' => $user->profile->latitude,
                         'longitude' => $user->profile->longitude,
                         'marital_status' => $user->profile->status,
-                        'looking_for' => $user->profile->looking_for,
+                        'looking_for_relationship' => $user->profile->looking_for_relationship,
                         'bio' => $user->profile->bio ?? null,
                         'profession' => $user->profile->profession ?? null,
                         'interests' => $user->profile->interests ?? null,

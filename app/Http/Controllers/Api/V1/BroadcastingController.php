@@ -4,9 +4,11 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\Chat;
+use App\Services\CacheService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
 
 /**
  * @OA\Tag(
@@ -16,6 +18,12 @@ use Illuminate\Support\Facades\Log;
  */
 class BroadcastingController extends Controller
 {
+    protected CacheService $cacheService;
+
+    public function __construct(CacheService $cacheService)
+    {
+        $this->cacheService = $cacheService;
+    }
     /**
      * Authenticate user for broadcasting channels
      *
@@ -150,9 +158,22 @@ class BroadcastingController extends Controller
             return response()->json(['error' => 'Invalid channel'], 400);
         }
 
-        $chat = Chat::find($chatId);
+        // Cache chat existence and user authorization for better performance
+        $cacheKey = "chat_auth:{$chatId}:{$user->id}";
+        $authResult = $this->cacheService->remember($cacheKey, 300, function () use ($chatId, $user) {
+            $chat = Chat::select('id')
+                ->whereHas('users', function ($query) use ($user) {
+                    $query->where('user_id', $user->id);
+                })
+                ->find($chatId);
 
-        if (!$chat) {
+            return [
+                'exists' => $chat !== null,
+                'authorized' => $chat !== null
+            ];
+        });
+
+        if (!$authResult['exists']) {
             Log::warning('Chat not found for broadcasting auth', [
                 'chat_id' => $chatId,
                 'user_id' => $user->id
@@ -160,8 +181,7 @@ class BroadcastingController extends Controller
             return response()->json(['error' => 'Chat not found'], 404);
         }
 
-        // Check if the user is part of this chat
-        $isAuthorized = $chat->users()->where('user_id', $user->id)->exists();
+        $isAuthorized = $authResult['authorized'];
 
         if (!$isAuthorized) {
             Log::warning('User not authorized for chat channel', [
@@ -240,18 +260,45 @@ class BroadcastingController extends Controller
      */
     private function generateAuthSignature(string $channelName, string $socketId): array
     {
-        $pusher = new \Pusher\Pusher(
-            config('broadcasting.connections.pusher.key'),
-            config('broadcasting.connections.pusher.secret'),
-            config('broadcasting.connections.pusher.app_id'),
-            config('broadcasting.connections.pusher.options') ?? []
-        );
+        // Use Reverb configuration
+        static $pusher = null;
+        if ($pusher === null) {
+            // Check if we're using Reverb
+            if (config('broadcasting.default') === 'reverb') {
+                $pusher = new \Pusher\Pusher(
+                    config('broadcasting.connections.reverb.key'),
+                    config('broadcasting.connections.reverb.secret'),
+                    config('broadcasting.connections.reverb.app_id'),
+                    [
+                        'host' => config('broadcasting.connections.reverb.options.host', 'localhost'),
+                        'port' => config('broadcasting.connections.reverb.options.port', 8080),
+                        'scheme' => config('broadcasting.connections.reverb.options.scheme', 'http'),
+                        'useTLS' => config('broadcasting.connections.reverb.options.scheme', 'http') === 'https',
+                        'cluster' => ''
+                    ]
+                );
+            } else {
+                $pusher = new \Pusher\Pusher(
+                    config('broadcasting.connections.pusher.key'),
+                    config('broadcasting.connections.pusher.secret'),
+                    config('broadcasting.connections.pusher.app_id'),
+                    config('broadcasting.connections.pusher.options') ?? []
+                );
+            }
+        }
 
-        // Get the raw auth string and decode it
-        $authString = $pusher->socket_auth($channelName, $socketId);
-
-        // The socket_auth method returns a JSON string, so we need to decode it
-        return json_decode($authString, true);
+        try {
+            // Get the raw auth string and decode it
+            $authString = $pusher->socket_auth($channelName, $socketId);
+            return json_decode($authString, true) ?? [];
+        } catch (\Exception $e) {
+            Log::error('Failed to generate auth signature', [
+                'channel' => $channelName,
+                'socket_id' => $socketId,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
     }
 
     /**
@@ -285,19 +332,46 @@ class BroadcastingController extends Controller
     /**
      * Generate authentication signature for presence channels
      */
-    private function generatePresenceAuthSignature(string $channelName, string $socketId, array $userData): string
+    private function generatePresenceAuthSignature(string $channelName, string $socketId, array $userData): array
     {
-        $pusher = new \Pusher\Pusher(
-            config('broadcasting.connections.pusher.key'),
-            config('broadcasting.connections.pusher.secret'),
-            config('broadcasting.connections.pusher.app_id'),
-            config('broadcasting.connections.pusher.options') ?? []
-        );
+        // Use Reverb configuration
+        static $pusher = null;
+        if ($pusher === null) {
+            // Check if we're using Reverb
+            if (config('broadcasting.default') === 'reverb') {
+                $pusher = new \Pusher\Pusher(
+                    config('broadcasting.connections.reverb.key'),
+                    config('broadcasting.connections.reverb.secret'),
+                    config('broadcasting.connections.reverb.app_id'),
+                    [
+                        'host' => config('broadcasting.connections.reverb.options.host', 'localhost'),
+                        'port' => config('broadcasting.connections.reverb.options.port', 8080),
+                        'scheme' => config('broadcasting.connections.reverb.options.scheme', 'http'),
+                        'useTLS' => config('broadcasting.connections.reverb.options.scheme', 'http') === 'https',
+                        'cluster' => ''
+                    ]
+                );
+            } else {
+                $pusher = new \Pusher\Pusher(
+                    config('broadcasting.connections.pusher.key'),
+                    config('broadcasting.connections.pusher.secret'),
+                    config('broadcasting.connections.pusher.app_id'),
+                    config('broadcasting.connections.pusher.options') ?? []
+                );
+            }
+        }
 
-        // Get the raw auth data and decode it
-        $authData = $pusher->presence_auth($channelName, $socketId, $userData['id'], $userData['info']);
-
-        // The presence_auth method returns an array with 'auth' and 'channel_data'
-        return $authData;
+        try {
+            // Get the raw auth data
+            return $pusher->presence_auth($channelName, $socketId, $userData['id'], $userData['info']);
+        } catch (\Exception $e) {
+            Log::error('Failed to generate presence auth signature', [
+                'channel' => $channelName,
+                'socket_id' => $socketId,
+                'user_data' => $userData,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
     }
 }

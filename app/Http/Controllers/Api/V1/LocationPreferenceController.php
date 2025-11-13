@@ -29,7 +29,7 @@ class LocationPreferenceController extends Controller
         }
 
         return response()->json([
-            'success' => true,
+            'status' => 'success',
             'data' => $locationPreferences
         ]);
     }
@@ -46,17 +46,22 @@ class LocationPreferenceController extends Controller
 
         // Validate the request data
         $validator = Validator::make($request->all(), [
-            'immigration_status' => 'sometimes|in:citizen,permanent_resident,work_visa,student,other|nullable',
+            'immigration_status' => 'sometimes|in:citizen,permanent_resident,work_visa,student_visa,tourist_visa,asylum_refugee,other|nullable',
             'years_in_current_country' => 'sometimes|integer|min:0|max:100|nullable',
-            'plans_to_return_uzbekistan' => 'sometimes|in:yes,no,maybe,for_visits|nullable',
-            'uzbekistan_visit_frequency' => 'sometimes|in:yearly,every_few_years,rarely,never|nullable',
-            'willing_to_relocate' => 'sometimes|boolean|nullable',
+            'plans_to_return_uzbekistan' => 'sometimes|in:definitely_yes,probably_yes,maybe,probably_no,definitely_no,undecided|nullable',
+            'uzbekistan_visit_frequency' => 'sometimes|in:never,rarely,annually,twice_yearly,quarterly,monthly,frequently|nullable',
+            'willing_to_relocate' => 'sometimes|in:no,within_city,within_state,within_country,internationally,for_right_person|nullable',
             'relocation_countries' => 'sometimes|array|nullable',
+            'relocation_countries.*' => 'sometimes|in:uzbekistan,united_states,canada,united_kingdom,germany,australia,turkey,russia,kazakhstan,other',
+            'preferred_locations' => 'sometimes|array|nullable',
+            'preferred_locations.*' => 'sometimes|in:city_center,suburbs,countryside,near_family,near_work,quiet_area',
+            'live_with_family' => 'sometimes|boolean|nullable',
+            'future_location_plans' => 'sometimes|string|max:1000|nullable',
         ]);
 
         if ($validator->fails()) {
             return response()->json([
-                'success' => false,
+                'status' => 'error',
                 'errors' => $validator->errors()
             ], 422);
         }
@@ -72,7 +77,7 @@ class LocationPreferenceController extends Controller
         $locationPreferences->save();
 
         return response()->json([
-            'success' => true,
+            'status' => 'success',
             'message' => 'Location preferences updated successfully',
             'data' => $locationPreferences
         ]);

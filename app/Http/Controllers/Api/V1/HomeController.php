@@ -6,11 +6,18 @@ use App\Http\Controllers\Controller;
 use App\Models\Like;
 use App\Models\Message;
 use App\Models\User;
+use App\Services\CacheService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class HomeController extends Controller
 {
+    protected $cacheService;
+
+    public function __construct(CacheService $cacheService)
+    {
+        $this->cacheService = $cacheService;
+    }
     /**
      * Get home page data for the authenticated user.
      *
@@ -23,51 +30,72 @@ class HomeController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        $profile = $user->profile;
 
-        if (!$profile) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Profile not found',
-                'error_code' => 'profile_not_found'
-            ], 404);
-        }
-
-        // Get unread messages count
-        $unreadMessagesCount = $user->getUnreadMessagesCount();
-
-        // Get new likes count (likes received after the user's last login)
-        $newLikesCount = $user->receivedLikes()
-            ->where('created_at', '>', $user->last_login_at ?? now()->subYears(10))
-            ->count();
-
-        // Get matches count
-        $matchesCount = $user->matches()->count();
-
-        // Update last active timestamp
+        // Always update last active timestamp outside of cache
         $user->updateLastActive();
 
-        return response()->json([
-            'status' => 'success',
-            'data' => [
-                'user' => [
-                    'id' => $user->id,
-                    'phone' => $user->phone,
-                    'email' => $user->email,
-                    'username' => $user->username,
-                    'full_name' => $user->getFullNameAttribute(),
-                    'age' => $user->age,
-                    'is_online' => $user->isOnline(),
-                    'last_active_at' => $user->last_active_at,
-                    'registration_completed' => (bool) $user->registration_completed,
-                ],
-                'profile' => $profile,
-                'stats' => [
-                    'unread_messages_count' => $unreadMessagesCount,
-                    'new_likes_count' => $newLikesCount,
-                    'matches_count' => $matchesCount,
-                ],
-            ]
-        ]);
+        return $this->cacheService->remember(
+            "home_stats:{$user->id}",
+            CacheService::TTL_SHORT, // Short TTL for real-time data like unread counts
+            function() use ($user) {
+                $profile = $user->profile;
+
+                if (!$profile) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Profile not found',
+                        'error_code' => 'profile_not_found'
+                    ], 404);
+                }
+
+                // Get unread messages count
+                $unreadMessagesCount = $user->getUnreadMessagesCount();
+
+                // Get new likes count (likes received after the user's last login)
+                $newLikesCount = $user->receivedLikes()
+                    ->where('created_at', '>', $user->last_login_at ?? now()->subYears(10))
+                    ->count();
+
+                // Get new matches count
+                $newMatchesCount = $user->matches()
+                    ->where('created_at', '>', $user->last_login_at ?? now()->subYears(10))
+                    ->count();
+
+                // Get profile views count (simplified for now)
+                $profileViews = 0;
+
+                // Get profile photo URL
+                $profilePhoto = $user->photos()->where('is_profile_photo', true)->first();
+                $profilePhotoUrl = $profilePhoto ? $profilePhoto->original_url : null;
+
+                // Get suggested users (simplified for now)
+                $suggestedUsers = [];
+                $suggestionsCount = 0;
+
+                return response()->json([
+                    'status' => 'success',
+                    'message' => 'Home stats retrieved successfully',
+                    'data' => [
+                        'user' => [
+                            'id' => $user->id,
+                            'first_name' => $profile->first_name,
+                            'profile_photo_url' => $profilePhotoUrl,
+                            'is_premium' => false, // Simplified for now
+                        ],
+                        'stats' => [
+                            'new_likes' => $newLikesCount,
+                            'new_matches' => $newMatchesCount,
+                            'unread_messages' => $unreadMessagesCount,
+                            'profile_views' => $profileViews,
+                        ],
+                        'suggestions' => [
+                            'count' => $suggestionsCount,
+                            'users' => $suggestedUsers,
+                        ],
+                    ]
+                ]);
+            },
+            ["user_{$user->id}_stats", "user_{$user->id}_chats", "user_{$user->id}_likes", "user_{$user->id}_matches"]
+        );
     }
 }

@@ -83,10 +83,14 @@ class PresenceService
     private function getOnlineUserIdsFromRedis(): array
     {
         try {
-            $keys = Cache::getRedis()->keys('*user_online_*');
-            return collect($keys)->map(function ($key) {
-                return (int) str_replace('user_online_', '', $key);
-            })->toArray();
+            $store = Cache::store();
+            if (method_exists($store, 'getRedis')) {
+                $keys = $store->getRedis()->keys('*user_online_*');
+                return collect($keys)->map(function ($key) {
+                    return (int) str_replace('user_online_', '', $key);
+                })->toArray();
+            }
+            return $this->getOnlineUserIdsFromDatabase();
         } catch (\Exception $e) {
             // Fallback to database method if Redis fails
             return $this->getOnlineUserIdsFromDatabase();
@@ -113,7 +117,8 @@ class PresenceService
     private function isRedisAvailable(): bool
     {
         try {
-            return config('cache.default') === 'redis' && Cache::getRedis() !== null;
+            $store = Cache::store();
+            return config('cache.default') === 'redis' && method_exists($store, 'getRedis') && $store->getRedis() !== null;
         } catch (\Exception $e) {
             return false;
         }
@@ -197,16 +202,63 @@ class PresenceService
     }
 
     /**
-     * Get presence data for multiple users
+     * Get presence data for multiple users (optimized batch operation)
      */
     public function getPresenceDataForUsers(array $userIds): array
     {
-        $presenceData = [];
+        if (empty($userIds)) {
+            return [];
+        }
 
+        // Use batch retrieval for better performance
+        if ($this->isRedisAvailable()) {
+            return $this->getBatchPresenceDataFromRedis($userIds);
+        } else {
+            return $this->getBatchPresenceDataFromCache($userIds);
+        }
+    }
+
+    /**
+     * Get batch presence data from Redis
+     */
+    private function getBatchPresenceDataFromRedis(array $userIds): array
+    {
+        try {
+            $store = Cache::store();
+            if (method_exists($store, 'getRedis')) {
+                $keys = array_map(fn($id) => "presence_data_{$id}", $userIds);
+                $values = $store->getRedis()->mget($keys);
+                
+                $presenceData = [];
+                foreach ($userIds as $index => $userId) {
+                    if ($values[$index] !== false) {
+                        $presenceData[$userId] = json_decode($values[$index], true);
+                    }
+                }
+                
+                return $presenceData;
+            }
+            return $this->getBatchPresenceDataFromCache($userIds);
+        } catch (\Exception $e) {
+            return $this->getBatchPresenceDataFromCache($userIds);
+        }
+    }
+
+    /**
+     * Get batch presence data from cache
+     */
+    private function getBatchPresenceDataFromCache(array $userIds): array
+    {
+        $presenceData = [];
+        
+        // Even with database cache, batch the operations
+        $keys = array_map(fn($id) => "presence_data_{$id}", $userIds);
+        $cachedData = Cache::many($keys);
+        
         foreach ($userIds as $userId) {
-            $data = $this->getPresenceData($userId);
-            if ($data) {
-                $presenceData[$userId] = $data;
+            $key = "presence_data_{$userId}";
+            if (isset($cachedData[$key])) {
+                $presenceData[$userId] = $cachedData[$key];
             }
         }
 
@@ -248,11 +300,15 @@ class PresenceService
     private function getTypingUsersFromRedis(int $chatId): array
     {
         try {
-            $keys = Cache::getRedis()->keys("*user_typing_*_chat_{$chatId}");
-            return collect($keys)->map(function ($key) {
-                preg_match('/user_typing_(\d+)_chat_\d+/', $key, $matches);
-                return isset($matches[1]) ? (int) $matches[1] : null;
-            })->filter()->values()->toArray();
+            $store = Cache::store();
+            if (method_exists($store, 'getRedis')) {
+                $keys = $store->getRedis()->keys("*user_typing_*_chat_{$chatId}");
+                return collect($keys)->map(function ($key) {
+                    preg_match('/user_typing_(\d+)_chat_\d+/', $key, $matches);
+                    return isset($matches[1]) ? (int) $matches[1] : null;
+                })->filter()->values()->toArray();
+            }
+            return [];
         } catch (\Exception $e) {
             return [];
         }
@@ -323,12 +379,15 @@ class PresenceService
     private function cleanupExpiredPresenceFromRedis(): void
     {
         try {
-            $keys = Cache::getRedis()->keys('*user_online_*');
+            $store = Cache::store();
+            if (method_exists($store, 'getRedis')) {
+                $keys = $store->getRedis()->keys('*user_online_*');
 
-            foreach ($keys as $key) {
-                if (!Cache::has($key)) {
-                    $userId = str_replace('user_online_', '', $key);
-                    Cache::forget("presence_data_{$userId}");
+                foreach ($keys as $key) {
+                    if (!Cache::has($key)) {
+                        $userId = str_replace('user_online_', '', $key);
+                        Cache::forget("presence_data_{$userId}");
+                    }
                 }
             }
         } catch (\Exception $e) {
@@ -346,15 +405,43 @@ class PresenceService
     }
 
     /**
-     * Force update online status for all users based on last_active_at
+     * Force update online status for all users based on last_active_at (optimized batch operation)
      */
     public function syncOnlineStatusFromDatabase(): void
     {
         $onlineUsers = User::where('last_active_at', '>=', now()->subMinutes(5))
+            ->with(['profile:id,user_id,first_name,last_name', 'profilePhoto:id,user_id,thumbnail_url'])
             ->get();
 
+        // Batch the cache operations for better performance
+        $cacheData = [];
+        $userIds = [];
+
         foreach ($onlineUsers as $user) {
-            $this->markUserOnline($user);
+            $userIds[] = $user->id;
+            $cacheData["user_online_{$user->id}"] = true;
+            
+            // Prepare presence data
+            $presenceData = [
+                'id' => $user->id,
+                'name' => $user->getFullNameAttribute(),
+                'email' => $user->email,
+                'avatar' => $user->getProfilePhotoUrl(),
+                'is_online' => true,
+                'last_active_at' => $user->last_active_at?->toISOString(),
+                'online_since' => now()->toISOString(),
+            ];
+            $cacheData["presence_data_{$user->id}"] = $presenceData;
+        }
+
+        // Batch update cache
+        if (!empty($cacheData)) {
+            Cache::putMany($cacheData, 300); // 5 minutes TTL
+        }
+
+        // Batch update database
+        if (!empty($userIds)) {
+            User::whereIn('id', $userIds)->update(['last_active_at' => now()]);
         }
     }
 

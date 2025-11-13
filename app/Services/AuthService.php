@@ -36,12 +36,12 @@ class AuthService
             // Begin transaction
             DB::beginTransaction();
 
-            // Create user
+            // Create user - registration NOT completed yet, needs to go through onboarding
             $user = User::create([
                 'email' => $data['email'] ?? null,
                 'phone' => $data['phone'] ?? null,
                 'password' => Hash::make($data['password']),
-                'registration_completed' => true,
+                'registration_completed' => false,
                 'is_private' => $data['is_private'] ?? false
             ]);
 
@@ -153,6 +153,38 @@ class AuthService
     }
 
     /**
+     * Authenticate user with OTP
+     *
+     * @param string $phone
+     * @param string $otpCode
+     * @return array
+     */
+    public function authenticateWithOtp(string $phone, string $otpCode): array
+    {
+        try {
+            $otpService = new OtpService();
+            $result = $otpService->verifyOtp($phone, $otpCode);
+            
+            return [
+                'success' => true,
+                'user' => $result['user'],
+                'token' => $result['token'],
+                'is_new_user' => $result['is_new_user']
+            ];
+        } catch (ValidationException $e) {
+            return [
+                'success' => false,
+                'message' => $e->getMessage()
+            ];
+        } catch (\Exception $e) {
+            return [
+                'success' => false,
+                'message' => 'Authentication failed. Please try again.'
+            ];
+        }
+    }
+
+    /**
      * Complete registration for OTP users
      *
      * @param User $user
@@ -162,14 +194,25 @@ class AuthService
      */
     public function completeRegistration(User $user, array $data): User
     {
+        // Check if registration is already completed
+        if ($user->registration_completed) {
+            throw new \Exception('Registration already completed');
+        }
+
         try {
             DB::beginTransaction();
 
             // Update user
+            // Convert profile_private to boolean if it's a string "1" or "0"
+            $isPrivate = $user->is_private; // default to current value
+            if (isset($data['profile_private'])) {
+                $isPrivate = filter_var($data['profile_private'], FILTER_VALIDATE_BOOLEAN);
+            }
+            
             $user->update([
                 'email' => $data['email'] ?? $user->email,
                 'registration_completed' => true,
-                'is_private' => $data['profile_private'] ?? $user->is_private,
+                'is_private' => $isPrivate,
                 'phone_verified_at' => now()
             ]);
 
@@ -210,7 +253,7 @@ class AuthService
                     'age' => $age,
                     'status' => $data['status'] ?? null,
                     'occupation' => $data['occupation'] ?? null,
-                    'looking_for' => $data['lookingFor'] ?? 'all',
+                    'looking_for_relationship' => $data['lookingFor'] ?? 'open',
                     'profile_completed_at' => now()
                 ]
             );
@@ -271,18 +314,18 @@ class AuthService
 
                     } else if (is_array($photoData) && isset($photoData['name'])) {
                         // Handle photo data from mobile app
-                        // For mobile uploads, we assume the file is already uploaded to S3
+                        // For mobile uploads, we assume the file is already uploaded to R2
                         // and we just need to create the database record
                         $filename = $photoData['name'];
-                        $s3Path = "media/profile_photos/{$user->id}/{$filename}";
+                        $r2Path = "media/profile_photos/{$user->id}/{$filename}";
 
-                        // Check if the file exists in S3
-                        if (!Storage::disk('s3')->exists($s3Path)) {
-                            \Log::warning("Photo file not found in S3: " . $s3Path);
+                        // Check if the file exists in R2
+                        if (!Storage::disk('r2')->exists($r2Path)) {
+                            \Log::warning("Photo file not found in R2: " . $r2Path);
                             continue;
                         }
 
-                        $originalUrl = Storage::disk('s3')->url($s3Path);
+                        $originalUrl = Storage::disk('r2')->url($r2Path);
 
                         // For mobile uploads, we might need to generate thumbnails
                         // This could be done asynchronously or on-demand

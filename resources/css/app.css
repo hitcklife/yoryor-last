@@ -1,5 +1,242 @@
 @import 'tailwindcss';
 @import '../../vendor/livewire/flux/dist/flux.css';
+@import './design-tokens.css';
+@import './components.css';
+@import './scrollbar.css';
+
+/* Lazy loading for non-critical CSS */
+@media print, (min-width: 1px) {
+    /* Flatpickr Date Picker Styles - Load only when needed */
+    @import 'flatpickr/dist/flatpickr.min.css';
+    @import 'flatpickr/dist/themes/material_blue.css';
+}
+
+/* Custom Flatpickr Dating App Theme */
+.flatpickr-calendar {
+    background: linear-gradient(135deg, #ffffff 0%, #f8f9ff 100%);
+    border: 2px solid #e0e7ff;
+    border-radius: 20px;
+    box-shadow: 0 25px 50px -12px rgba(147, 51, 234, 0.25);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.flatpickr-calendar:before,
+.flatpickr-calendar:after {
+    display: none;
+}
+
+.flatpickr-month {
+    background: linear-gradient(135deg, #8b5cf6 0%, #ec4899 50%, #06b6d4 100%);
+    color: white;
+    border-radius: 16px 16px 0 0;
+    padding: 20px 0;
+    margin: -1px -1px 0 -1px;
+}
+
+.flatpickr-current-month {
+    font-size: 18px;
+    font-weight: 700;
+    text-align: center;
+    padding: 0;
+}
+
+.flatpickr-current-month span.cur-month {
+    font-weight: 800;
+    font-size: 20px;
+    background: linear-gradient(135deg, #ffffff 0%, #f8f9ff 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.flatpickr-current-month .numInputWrapper span.arrowUp:after,
+.flatpickr-current-month .numInputWrapper span.arrowDown:after {
+    border-left-color: white;
+    border-right-color: white;
+}
+
+.flatpickr-weekdays {
+    background: rgba(139, 92, 246, 0.1);
+    padding: 12px 0;
+}
+
+.flatpickr-weekday {
+    color: #6b46c1;
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.flatpickr-day {
+    color: #374151;
+    font-weight: 500;
+    border-radius: 12px;
+    transition: all 0.2s ease;
+    position: relative;
+}
+
+.flatpickr-day:hover {
+    background: rgba(139, 92, 246, 0.1) !important;
+    color: #8b5cf6 !important;
+    transform: scale(1.05);
+}
+
+.flatpickr-day.today {
+    background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%) !important;
+    color: white !important;
+    font-weight: 700;
+    box-shadow: 0 4px 8px rgba(251, 191, 36, 0.3);
+}
+
+.flatpickr-day.selected {
+    background: linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%) !important;
+    color: white !important;
+    font-weight: 700;
+    box-shadow: 0 6px 12px rgba(139, 92, 246, 0.4);
+    transform: scale(1.05);
+}
+
+.flatpickr-day.selected:hover {
+    transform: scale(1.08);
+}
+
+.flatpickr-day.nextMonthDay,
+.flatpickr-day.prevMonthDay {
+    color: #d1d5db;
+}
+
+.flatpickr-day.disabled {
+    color: #d1d5db;
+    cursor: not-allowed;
+}
+
+.flatpickr-day.disabled:hover {
+    background: transparent !important;
+    transform: none !important;
+}
+
+/* Navigation arrows */
+.flatpickr-prev-month,
+.flatpickr-next-month {
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 50%;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+.flatpickr-prev-month:hover,
+.flatpickr-next-month:hover {
+    background: white;
+    box-shadow: 0 4px 12px rgba(139, 92, 246, 0.2);
+    transform: translateY(-50%) scale(1.1);
+}
+
+.flatpickr-prev-month svg,
+.flatpickr-next-month svg {
+    fill: #8b5cf6;
+}
+
+/* Time container styling */
+.flatpickr-time {
+    background: rgba(139, 92, 246, 0.05);
+    border-radius: 0 0 16px 16px;
+    border-top: 1px solid rgba(139, 92, 246, 0.2);
+}
+
+.flatpickr-time input {
+    background: white;
+    border: 2px solid #e0e7ff;
+    border-radius: 8px;
+    color: #374151;
+    font-weight: 600;
+}
+
+.flatpickr-time input:hover {
+    border-color: #8b5cf6;
+}
+
+/* Mobile responsiveness */
+@media (max-width: 640px) {
+    .flatpickr-calendar {
+        border-radius: 16px;
+        box-shadow: 0 20px 40px -12px rgba(147, 51, 234, 0.3);
+        margin: 10px;
+    }
+
+    .flatpickr-month {
+        padding: 16px 0;
+    }
+
+    .flatpickr-current-month {
+        font-size: 16px;
+    }
+
+    .flatpickr-current-month span.cur-month {
+        font-size: 18px;
+    }
+
+    .flatpickr-day {
+        width: 36px;
+        height: 36px;
+        line-height: 34px;
+        margin: 2px;
+    }
+
+    .flatpickr-weekdays {
+        padding: 8px 0;
+    }
+
+    .flatpickr-weekday {
+        font-size: 12px;
+    }
+}
+
+/* Animation for calendar appearance */
+.flatpickr-calendar {
+    animation: calendarFadeIn 0.3s ease-out;
+}
+
+@keyframes calendarFadeIn {
+    from {
+        opacity: 0;
+        transform: scale(0.9) translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+/* Heart animation for selected dates */
+.flatpickr-day.selected::before {
+    content: '❤️';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0);
+    animation: heartPulse 0.6s ease-out;
+    font-size: 12px;
+}
+
+@keyframes heartPulse {
+    0% {
+        transform: translate(-50%, -50%) scale(0);
+        opacity: 0;
+    }
+    50% {
+        transform: translate(-50%, -50%) scale(1.2);
+        opacity: 1;
+    }
+    100% {
+        transform: translate(-50%, -50%) scale(1);
+        opacity: 0;
+    }
+}
 
 @source '../views';
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
@@ -37,6 +274,13 @@
 }
 
 @layer base {
+    /* Global reset for spacing issues */
+    html, body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+    }
 
     *,
     ::after,

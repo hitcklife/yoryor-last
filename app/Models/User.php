@@ -18,9 +18,12 @@ class User extends Authenticatable
     use HasFactory, Notifiable, HasApiTokens, SoftDeletes;
 
     protected $fillable = [
-        'email', 'phone', 'google_id', 'facebook_id', 'password',
-        'registration_completed', 'last_active_at', 'last_login_at',
-        'two_factor_enabled', 'two_factor_secret', 'two_factor_recovery_codes'
+        'name', 'first_name', 'last_name', 'email', 'phone', 'google_id', 'facebook_id', 'password',
+        'gender', 'date_of_birth', 'relationship_status', 'occupation_type', 'profession',
+        'bio', 'city', 'state', 'country', 'looking_for_gender', 'age_range_min', 'age_range_max',
+        'looking_for_relationship', 'max_distance', 'interests', 'profile_photos', 'is_active',
+        'registration_completed', 'last_active_at', 'last_login_at', 'avatar', 'provider',
+        'two_factor_enabled', 'two_factor_secret', 'two_factor_recovery_codes', 'profile_uuid'
     ];
 
     protected $hidden = [
@@ -38,8 +41,8 @@ class User extends Authenticatable
             'registration_completed' => 'boolean',
             'two_factor_enabled' => 'boolean',
             'two_factor_recovery_codes' => 'array',
-            'is_admin' => 'boolean',
             'is_private' => 'boolean',
+            'profile_uuid' => 'string',
         ];
     }
 
@@ -49,6 +52,17 @@ class User extends Authenticatable
         return $query->where('registration_completed', true)
                     ->whereNull('disabled_at')
                     ->where('is_private', false);
+    }
+
+    public function scopeIncludingPrivate(Builder $query): Builder
+    {
+        return $query->where('registration_completed', true)
+                    ->whereNull('disabled_at');
+    }
+
+    public function scopePrivate(Builder $query): Builder
+    {
+        return $query->where('is_private', true);
     }
 
     public function scopeRecentlyActive(Builder $query, int $days = 30): Builder
@@ -87,6 +101,11 @@ class User extends Authenticatable
     public function profile(): HasOne
     {
         return $this->hasOne(Profile::class);
+    }
+
+    public function userSetting(): HasOne
+    {
+        return $this->hasOne(UserSetting::class);
     }
 
     public function preference(): HasOne
@@ -142,13 +161,6 @@ class User extends Authenticatable
         return $this->hasOne(UserSetting::class);
     }
 
-    /**
-     * Get the emergency contacts for the user.
-     */
-    public function emergencyContacts(): HasMany
-    {
-        return $this->hasMany(EmergencyContact::class);
-    }
 
     /**
      * Get the data export requests for the user.
@@ -188,6 +200,43 @@ class User extends Authenticatable
     public function sentMessages(): HasMany
     {
         return $this->hasMany(Message::class, 'sender_id');
+    }
+
+    /**
+     * Get unread messages for the user (messages sent to user's chats that haven't been read).
+     */
+    public function unreadMessages()
+    {
+        return Message::whereIn('chat_id', $this->chats()->pluck('chats.id'))
+                    ->where('sender_id', '!=', $this->id) // Don't count own messages
+                    ->whereDoesntHave('messageReads', function($query) {
+                        $query->where('user_id', $this->id);
+                    });
+    }
+
+    /**
+     * Get unread notifications for the user.
+     */
+    public function unreadNotifications()
+    {
+        return $this->notifications()->whereNull('read_at');
+    }
+
+    /**
+     * Get unread notifications count for the user.
+     */
+    public function unreadNotificationsCount(): int
+    {
+        return $this->notifications()->whereNull('read_at')->count();
+    }
+
+    /**
+     * Get received messages for the user.
+     */
+    public function receivedMessages(): HasMany
+    {
+        return $this->hasManyThrough(Message::class, ChatUser::class, 'user_id', 'chat_id', 'id', 'chat_id')
+                    ->where('messages.sender_id', '!=', $this->id);
     }
 
     // MATCHING RELATIONSHIPS
@@ -243,6 +292,48 @@ class User extends Authenticatable
     }
 
     /**
+     * Get the user's subscriptions.
+     */
+    public function subscriptions(): HasMany
+    {
+        return $this->hasMany(UserSubscription::class)->orderBy('created_at', 'desc');
+    }
+
+    /**
+     * Get the user's active subscription.
+     */
+    public function activeSubscription(): HasOne
+    {
+        return $this->hasOne(UserSubscription::class)
+                    ->whereIn('status', ['active', 'trialing'])
+                    ->latest();
+    }
+
+    /**
+     * Get the user's payment transactions.
+     */
+    public function paymentTransactions(): HasMany
+    {
+        return $this->hasMany(PaymentTransaction::class)->orderBy('created_at', 'desc');
+    }
+
+    /**
+     * Get the user's daily usage limits.
+     */
+    public function usageLimits(): HasMany
+    {
+        return $this->hasMany(UserUsageLimits::class);
+    }
+
+    /**
+     * Get the user's monthly usage.
+     */
+    public function monthlyUsage(): HasMany
+    {
+        return $this->hasMany(UserMonthlyUsage::class);
+    }
+
+    /**
      * Get only active stories for the user.
      */
     public function activeStories(): HasMany
@@ -269,6 +360,79 @@ class User extends Authenticatable
     {
         return $this->deviceTokens->pluck('token')->toArray();
     }
+
+    /**
+     * Get the matchmaker profile (if user is a matchmaker)
+     */
+    public function matchmaker(): HasOne
+    {
+        return $this->hasOne(Matchmaker::class);
+    }
+
+    /**
+     * Get matchmaker clients (where this user is the client)
+     */
+    public function matchmakerClients(): HasMany
+    {
+        return $this->hasMany(MatchmakerClient::class, 'client_id');
+    }
+
+    /**
+     * Get prayer time preferences
+     */
+    public function prayerTimes(): HasOne
+    {
+        return $this->hasOne(UserPrayerTime::class);
+    }
+
+    /**
+     * Get family approvals where this user is a family member
+     */
+    public function familyApprovals(): HasMany
+    {
+        return $this->hasMany(FamilyApproval::class, 'family_member_id');
+    }
+
+    /**
+     * Get family approval requests for this user
+     */
+    public function familyApprovalRequests(): HasMany
+    {
+        return $this->hasMany(FamilyApprovalRequest::class, 'user_id');
+    }
+
+    /**
+     * Get verified badges for this user
+     */
+    public function verifiedBadges(): HasMany
+    {
+        return $this->hasMany(UserVerifiedBadge::class);
+    }
+
+    /**
+     * Get verification requests for this user
+     */
+    public function verificationRequests(): HasMany
+    {
+        return $this->hasMany(VerificationRequest::class);
+    }
+
+    /**
+     * Get emergency contacts for this user
+     */
+    public function emergencyContacts(): HasMany
+    {
+        return $this->hasMany(UserEmergencyContact::class);
+    }
+
+    /**
+     * Get panic activations for this user
+     */
+    public function panicActivations(): HasMany
+    {
+        return $this->hasMany(PanicActivation::class);
+    }
+
 
     // HELPER METHODS
     public function updateLastActive(): void
@@ -413,6 +577,24 @@ class User extends Authenticatable
             ->count();
     }
 
+    /**
+     * Get unread messages count (alias for getUnreadMessagesCount for compatibility)
+     */
+    public function unreadMessagesCount(): int
+    {
+        return $this->getUnreadMessagesCount();
+    }
+
+    /**
+     * Get unread matches count (matches created after user's last login)
+     */
+    public function unreadMatchesCount(): int
+    {
+        return $this->matches()
+            ->where('created_at', '>', $this->last_login_at ?? now()->subYears(10))
+            ->count();
+    }
+
     public function hasLiked(User $user): bool
     {
         return $this->likes()->where('liked_user_id', $user->id)->exists();
@@ -448,6 +630,22 @@ class User extends Authenticatable
     {
         // Users can't view profiles of those who blocked them or whom they blocked
         return !$this->hasBlocked($user) && !$this->isBlockedBy($user);
+    }
+
+    public function canViewPrivateContent(User $user): bool
+    {
+        // Users can view their own private content
+        if ($this->id === $user->id) {
+            return true;
+        }
+
+        // Users can view private content if they are matched
+        if ($this->hasMatched($user)) {
+            return true;
+        }
+
+        // For now, private users' content is always restricted to non-matched users
+        return false;
     }
 
     // PROFILE PHOTO HELPER METHODS
@@ -530,5 +728,57 @@ class User extends Authenticatable
         }
 
         return false;
+    }
+
+    /**
+     * Check if user has completed their profile registration
+     */
+    public function hasCompletedProfile(): bool
+    {
+        return $this->registration_completed === true ||
+               ($this->name && $this->email && $this->gender && $this->date_of_birth);
+    }
+
+    /**
+     * Generate a unique profile UUID for the user
+     */
+    public function generateProfileUuid(): string
+    {
+        if (!$this->profile_uuid) {
+            $this->profile_uuid = Str::uuid();
+            $this->save();
+        }
+        return $this->profile_uuid;
+    }
+
+    /**
+     * Find user by profile UUID
+     */
+    public static function findByProfileUuid(string $uuid): ?User
+    {
+        return static::where('profile_uuid', $uuid)->first();
+    }
+
+    /**
+     * Get the profile URL using UUID
+     */
+    public function getProfileUrlAttribute(): string
+    {
+        $uuid = $this->profile_uuid ?: $this->generateProfileUuid();
+        return route('user.profile.show', $uuid);
+    }
+
+    /**
+     * Boot method to automatically generate UUID for new users
+     */
+    protected static function boot()
+    {
+        parent::boot();
+        
+        static::creating(function ($user) {
+            if (!$user->profile_uuid) {
+                $user->profile_uuid = Str::uuid();
+            }
+        });
     }
 }

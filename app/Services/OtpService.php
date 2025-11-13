@@ -25,7 +25,7 @@ class OtpService
             ->delete();
 
         // Generate new OTP
-        $otp = str_pad((string) random_int(0, 9999), 4, '0', STR_PAD_LEFT);
+        $otp = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
 
         // Store OTP
         OtpCode::create([
@@ -64,6 +64,13 @@ class OtpService
             ]);
         }
 
+        // Check if the OTP code matches
+        if ($otpCode->code !== $otp) {
+            throw ValidationException::withMessages([
+                'otp' => ['The OTP is invalid or expired.']
+            ]);
+        }
+
         // Mark OTP as used
         $otpCode->update(['used' => true]);
 
@@ -84,6 +91,32 @@ class OtpService
             'token' => $token,
             'is_new_user' => $user->wasRecentlyCreated,
         ];
+    }
+
+    /**
+     * Send OTP to phone number
+     *
+     * @param string $phone
+     * @return array
+     */
+    public function sendOtp(string $phone): array
+    {
+        try {
+            $otpData = $this->generateOtp($phone);
+            $sent = $this->sendOtpSms($phone, $otpData['otp']);
+            
+            return [
+                'success' => $sent,
+                'phone' => $phone,
+                'expires_in' => $otpData['expires_in'],
+                'message' => $sent ? 'OTP sent successfully' : 'Failed to send OTP'
+            ];
+        } catch (\Exception $e) {
+            return [
+                'success' => false,
+                'message' => 'Failed to send OTP. Please try again.'
+            ];
+        }
     }
 
     /**

@@ -26,7 +26,7 @@ class EmergencyContactsController extends Controller
             ->get();
 
         return response()->json([
-            'success' => true,
+            'status' => 'success',
             'data' => $contacts
         ]);
     }
@@ -51,7 +51,7 @@ class EmergencyContactsController extends Controller
 
         if ($validator->fails()) {
             return response()->json([
-                'success' => false,
+                'status' => 'error',
                 'errors' => $validator->errors()
             ], 422);
         }
@@ -75,7 +75,7 @@ class EmergencyContactsController extends Controller
         $contact->save();
 
         return response()->json([
-            'success' => true,
+            'status' => 'success',
             'message' => 'Emergency contact added successfully',
             'data' => $contact
         ]);
@@ -97,7 +97,7 @@ class EmergencyContactsController extends Controller
 
         if (!$contact) {
             return response()->json([
-                'success' => false,
+                'status' => 'error',
                 'message' => 'Emergency contact not found'
             ], 404);
         }
@@ -112,7 +112,7 @@ class EmergencyContactsController extends Controller
 
         if ($validator->fails()) {
             return response()->json([
-                'success' => false,
+                'status' => 'error',
                 'errors' => $validator->errors()
             ], 422);
         }
@@ -135,7 +135,7 @@ class EmergencyContactsController extends Controller
         $contact->save();
 
         return response()->json([
-            'success' => true,
+            'status' => 'success',
             'message' => 'Emergency contact updated successfully',
             'data' => $contact
         ]);
@@ -157,7 +157,7 @@ class EmergencyContactsController extends Controller
 
         if (!$contact) {
             return response()->json([
-                'success' => false,
+                'status' => 'error',
                 'message' => 'Emergency contact not found'
             ], 404);
         }
@@ -166,7 +166,7 @@ class EmergencyContactsController extends Controller
         $contact->delete();
 
         return response()->json([
-            'success' => true,
+            'status' => 'success',
             'message' => 'Emergency contact deleted successfully'
         ]);
     }

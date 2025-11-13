@@ -33,12 +33,12 @@ class AuthController extends Controller
             // Begin transaction
             DB::beginTransaction();
 
-            // Create user
+            // Create user - registration NOT completed yet, needs onboarding
             $user = User::create([
                 'email' => $request->email,
                 'phone' => $request->phone,
                 'password' => Hash::make($request->password),
-                'registration_completed' => true
+                'registration_completed' => false
             ]);
 
             // Create profile
@@ -311,6 +311,7 @@ class AuthController extends Controller
                     'max_age' => 99
                 ]);
 
+                // Only mark as completed for API registration flow, not web onboarding flow
                 $user->update(['registration_completed' => true]);
 
                 return response()->json([

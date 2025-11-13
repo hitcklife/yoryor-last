@@ -1,0 +1,1 @@
+<!-- Styles are now loaded via Vite in resources/css/components.css and resources/css/scrollbar.css -->

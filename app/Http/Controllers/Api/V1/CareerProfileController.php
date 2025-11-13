@@ -29,7 +29,7 @@ class CareerProfileController extends Controller
         }
 
         return response()->json([
-            'success' => true,
+            'status' => 'success',
             'data' => $careerProfile
         ]);
     }
@@ -44,18 +44,47 @@ class CareerProfileController extends Controller
     {
         $user = $request->user();
 
+        // Get input data and handle legacy field mappings
+        $input = $request->all();
+        
+        // Handle legacy field mappings for backward compatibility
+        if (array_key_exists('profession', $input)) {
+            $input['occupation'] = $input['profession'];
+        }
+        if (array_key_exists('company', $input)) {
+            $input['employer'] = $input['company'];
+        }
+        if (array_key_exists('job_title', $input)) {
+            $input['occupation'] = $input['job_title'];
+        }
+        if (array_key_exists('income', $input)) {
+            $input['income_range'] = $input['income'];
+        }
+
         // Validate the request data
-        $validator = Validator::make($request->all(), [
-            'education_level' => 'sometimes|in:high_school,bachelors,masters,phd,vocational,other|nullable',
+        $validator = Validator::make($input, [
+            'education_level' => 'sometimes|in:high_school,associate,bachelor,master,doctorate,professional,trade_school,other|nullable',
+            'field_of_study' => 'sometimes|string|max:255|nullable',
+            'work_status' => 'sometimes|in:full_time,part_time,self_employed,freelance,student,unemployed,retired|nullable',
+            'occupation' => 'sometimes|string|max:255|nullable',
+            'employer' => 'sometimes|string|max:255|nullable',
+            'career_goals' => 'sometimes|array|nullable',
+            'career_goals.*' => 'sometimes|in:entrepreneurship,leadership,expertise,work_life_balance,financial_success,make_impact',
+            'income_range' => 'sometimes|in:under_25k,25k_50k,50k_75k,75k_100k,100k_150k,150k_plus,prefer_not_to_say|nullable',
+            
+            // Legacy fields for backward compatibility
+            'profession' => 'sometimes|string|max:255|nullable',
+            'company' => 'sometimes|string|max:255|nullable',
+            'job_title' => 'sometimes|string|max:255|nullable',
+            'income' => 'sometimes|string|max:100|nullable',
             'university_name' => 'sometimes|string|max:200|nullable',
-            'income_range' => 'sometimes|in:prefer_not_to_say,under_25k,25k_50k,50k_75k,75k_100k,100k_plus|nullable',
             'owns_property' => 'sometimes|boolean|nullable',
             'financial_goals' => 'sometimes|string|nullable',
         ]);
 
         if ($validator->fails()) {
             return response()->json([
-                'success' => false,
+                'status' => 'error',
                 'errors' => $validator->errors()
             ], 422);
         }
@@ -71,7 +100,7 @@ class CareerProfileController extends Controller
         $careerProfile->save();
 
         return response()->json([
-            'success' => true,
+            'status' => 'success',
             'message' => 'Career profile updated successfully',
             'data' => $careerProfile
         ]);

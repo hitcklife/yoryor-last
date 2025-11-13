@@ -18,16 +18,18 @@ class Profile extends Model
         'date_of_birth',
         'age',
         'status',
+        'occupation',
         'city',
         'state',
         'province',
         'country_id',
+        'country_code',
         'latitude',
         'longitude',
         'profession',
         'bio',
         'interests',
-        'looking_for',
+        'looking_for_relationship',
         'profile_views',
         'profile_completed_at'
     ];
@@ -43,10 +45,9 @@ class Profile extends Model
         'latitude' => 'decimal:7',
         'longitude' => 'decimal:7',
         'age' => 'integer',
-        'status' => 'boolean',
         'profile_views' => 'integer',
         'profile_completed_at' => 'datetime',
-        'looking_for' => 'string'
+        'looking_for_relationship' => 'string'
     ];
 
     public function user(): BelongsTo
@@ -57,6 +58,27 @@ class Profile extends Model
     public function country(): BelongsTo
     {
         return $this->belongsTo(Country::class);
+    }
+
+    public function getCountryNameAttribute(): ?string
+    {
+        // Use the country relationship if country_id exists
+        if ($this->country_id) {
+            // Try to load the relationship if not already loaded
+            if (!$this->relationLoaded('country')) {
+                try {
+                    $this->load('country');
+                } catch (\Exception $e) {
+                    // Fallback if relationship loading fails
+                }
+            }
+            
+            if ($this->relationLoaded('country') && $this->country) {
+                return $this->country->name;
+            }
+        }
+        
+        return null;
     }
 
 }

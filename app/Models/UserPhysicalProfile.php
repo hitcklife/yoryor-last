@@ -13,18 +13,28 @@ class UserPhysicalProfile extends Model
     protected $fillable = [
         'user_id',
         'height',
-        'body_type',
-        'hair_color',
-        'eye_color',
+        'weight',
+        'smoking_habit',
+        'drinking_habit',
+        'exercise_frequency',
+        'diet_preference',
+        'pet_preference',
+        'hobbies',
+        'sleep_schedule',
+        
+        // Legacy fields for backward compatibility
         'fitness_level',
         'dietary_restrictions',
         'smoking_status',
         'drinking_status',
+        'diet',
     ];
 
     protected $casts = [
         'height' => 'integer',
+        'weight' => 'decimal:2',
         'dietary_restrictions' => 'array',
+        'hobbies' => 'array',
     ];
 
     public function user(): BelongsTo

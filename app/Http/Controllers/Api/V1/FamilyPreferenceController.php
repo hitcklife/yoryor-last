@@ -29,7 +29,7 @@ class FamilyPreferenceController extends Controller
         }
 
         return response()->json([
-            'success' => true,
+            'status' => 'success',
             'data' => $familyPreferences
         ]);
     }
@@ -44,21 +44,40 @@ class FamilyPreferenceController extends Controller
     {
         $user = $request->user();
 
+        // Get input data - your app sends the exact format we expect
+        $input = $request->all();
+
+        // Handle boolean normalization for specific fields
+        if (array_key_exists('family_approval_important', $input)) {
+            $input['family_approval_important'] = $this->normalizeBooleanish($input['family_approval_important']);
+        }
+        if (array_key_exists('living_with_family', $input)) {
+            $input['living_with_family'] = $this->normalizeBooleanish($input['living_with_family']);
+        }
+
         // Validate the request data
-        $validator = Validator::make($request->all(), [
-            'family_importance' => 'sometimes|in:very_important,important,somewhat_important,not_important|nullable',
-            'wants_children' => 'sometimes|in:yes,no,maybe,have_and_want_more,have_and_dont_want_more|nullable',
-            'number_of_children_wanted' => 'sometimes|integer|min:0|max:10|nullable',
-            'living_with_family' => 'sometimes|boolean|nullable',
+        $validator = Validator::make($input, [
+            'marriage_intention' => 'sometimes|in:seeking_marriage,open_to_marriage,not_ready_yet,undecided|nullable',
+            'children_preference' => 'sometimes|in:want_children,have_and_want_more,have_and_dont_want_more,dont_want_children,undecided|nullable',
+            'current_children' => 'sometimes|integer|min:0|max:20|nullable',
+            'family_values' => 'sometimes|array|nullable',
+            'family_values.*' => 'sometimes|in:close_knit,traditional,family_first,independent,supportive,respect_elders',
+            'living_situation' => 'sometimes|in:alone,with_family,with_roommates,with_partner,other|nullable',
+            'family_involvement' => 'sometimes|string|max:1000|nullable',
+            'marriage_timeline' => 'sometimes|in:within_6_months,within_1_year,within_2_years,within_5_years,no_timeline|nullable',
+            'family_importance' => 'sometimes|in:extremely_important,very_important,moderately_important,somewhat_important,not_important|nullable',
             'family_approval_important' => 'sometimes|boolean|nullable',
-            'marriage_timeline' => 'sometimes|in:within_1_year,1_2_years,2_5_years,someday,never|nullable',
             'previous_marriages' => 'sometimes|integer|min:0|max:10|nullable',
-            'homemaker_preference' => 'sometimes|in:yes,no,flexible,both_work|nullable',
+            'homemaker_preference' => 'sometimes|in:prefer_traditional_roles,both_work_equally,flexible_arrangement,career_focused,no_preference|nullable',
+            
+            // Keep backward compatibility
+            'number_of_children_wanted' => 'sometimes|integer|min:0|max:20|nullable',
+            'living_with_family' => 'sometimes|boolean|nullable',
         ]);
 
         if ($validator->fails()) {
             return response()->json([
-                'success' => false,
+                'status' => 'error',
                 'errors' => $validator->errors()
             ], 422);
         }
@@ -74,9 +93,33 @@ class FamilyPreferenceController extends Controller
         $familyPreferences->save();
 
         return response()->json([
-            'success' => true,
+            'status' => 'success',
             'message' => 'Family preferences updated successfully',
             'data' => $familyPreferences
         ]);
     }
+
+    private function normalizeBooleanish($value): ?bool
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        if (is_bool($value)) {
+            return $value;
+        }
+        if (is_int($value)) {
+            return $value !== 0;
+        }
+        $v = strtolower(trim((string)$value));
+        $truthy = ['true', '1', 'yes', 'y', 'on', 'agree'];
+        $falsy = ['false', '0', 'no', 'n', 'off', 'disagree'];
+        if (in_array($v, $truthy, true)) {
+            return true;
+        }
+        if (in_array($v, $falsy, true)) {
+            return false;
+        }
+        return null;
+    }
+
 }

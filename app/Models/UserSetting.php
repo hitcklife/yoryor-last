@@ -79,6 +79,24 @@ class UserSetting extends Model
         'login_alerts_enabled',
         'block_screenshots',
         'hide_from_facebook',
+        'theme_preference',
+        
+        // New fields for mobile parity
+        'emergency_contacts',
+        'device_token',
+        'last_login_at',
+        'login_devices',
+        'panic_button_enabled',
+        'safety_contacts',
+        'show_me_gender',
+        'last_data_export_at',
+        'data_export_requested',
+        'photo_verified_at',
+        'id_verified_at',
+        'phone_verified_at',
+        'social_verified_at',
+        'quiet_hours_enabled',
+        'notification_methods',
     ];
 
     /**
@@ -131,6 +149,21 @@ class UserSetting extends Model
         'hide_from_facebook' => 'boolean',
         'looking_for_preferences' => 'array',
         'interest_preferences' => 'array',
+        
+        // New field casts
+        'emergency_contacts' => 'array',
+        'login_devices' => 'array', 
+        'panic_button_enabled' => 'boolean',
+        'safety_contacts' => 'array',
+        'data_export_requested' => 'boolean',
+        'quiet_hours_enabled' => 'boolean',
+        'notification_methods' => 'array',
+        'last_login_at' => 'datetime',
+        'last_data_export_at' => 'datetime',
+        'photo_verified_at' => 'datetime',
+        'id_verified_at' => 'datetime',
+        'phone_verified_at' => 'datetime',
+        'social_verified_at' => 'datetime',
     ];
 
     /**

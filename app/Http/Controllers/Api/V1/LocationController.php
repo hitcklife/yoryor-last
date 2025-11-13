@@ -4,6 +4,10 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\ApiResource;
+use App\Services\CacheService;
+use App\Services\ErrorHandlingService;
+use App\Services\ValidationService;
+use App\Services\PresenceService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
@@ -11,6 +15,14 @@ use Illuminate\Validation\ValidationException;
 
 class LocationController extends Controller
 {
+    private CacheService $cacheService;
+    private PresenceService $presenceService;
+
+    public function __construct(CacheService $cacheService, PresenceService $presenceService)
+    {
+        $this->cacheService = $cacheService;
+        $this->presenceService = $presenceService;
+    }
     /**
      * Update user's location
      *
@@ -83,75 +95,122 @@ class LocationController extends Controller
      *     )
      * )
      */
-    public function updateLocation(Request $request): ApiResource
+    public function updateLocation(Request $request): JsonResponse
     {
         try {
-            // Validate the request
-            $validated = $request->validate([
+            $user = $request->user();
+
+            // Enhanced validation using ValidationService with rate limiting awareness
+            $validated = ValidationService::validateRequest($request, [
                 'latitude' => 'required|numeric|between:-90,90',
                 'longitude' => 'required|numeric|between:-180,180',
-                'accuracy' => 'nullable|numeric|min:0',
+                'accuracy' => 'nullable|numeric',
                 'altitude' => 'nullable|numeric',
                 'heading' => 'nullable|numeric',
                 'speed' => 'nullable|numeric',
             ], [
                 'latitude.required' => 'Latitude is required',
-                'latitude.numeric' => 'Latitude must be a number',
                 'latitude.between' => 'Latitude must be between -90 and 90 degrees',
                 'longitude.required' => 'Longitude is required',
-                'longitude.numeric' => 'Longitude must be a number',
                 'longitude.between' => 'Longitude must be between -180 and 180 degrees',
-                'accuracy.numeric' => 'Accuracy must be a number',
-                'accuracy.min' => 'Accuracy must be a positive number',
-                'altitude.numeric' => 'Altitude must be a number',
-                'heading.numeric' => 'Heading must be a number',
-                'heading.between' => 'Heading must be between 0 and 360 degrees',
-                'speed.numeric' => 'Speed must be a number',
-                'speed.min' => 'Speed must be a positive number',
             ]);
-
-            $user = $request->user();
-
-            // Get or create user's profile
-            $profile = $user->profile;
-
-            if (!$profile) {
-                return ApiResource::error(null, 'Profile not found', 404);
+            
+            // Normalize values: treat negative values as null/0 for optional fields
+            if (isset($validated['accuracy']) && $validated['accuracy'] < 0) {
+                $validated['accuracy'] = null;
+            }
+            if (isset($validated['altitude']) && $validated['altitude'] < -1000) {
+                $validated['altitude'] = null;
+            }
+            if (isset($validated['heading']) && ($validated['heading'] < 0 || $validated['heading'] > 360)) {
+                $validated['heading'] = null;
+            }
+            if (isset($validated['speed']) && $validated['speed'] < 0) {
+                $validated['speed'] = null;
             }
 
-            // Update only latitude and longitude as requested
-            $profile->update([
-                'latitude' => $validated['latitude'],
-                'longitude' => $validated['longitude'],
-            ]);
+            // Get or create user's profile with optimized loading
+            $profile = $user->profile;
+            if (!$profile) {
+                return ErrorHandlingService::notFoundError('Profile');
+            }
 
-            // Log the location update for debugging/analytics
-            Log::info('User location updated', [
-                'user_id' => $user->id,
-                'latitude' => $validated['latitude'],
-                'longitude' => $validated['longitude'],
-                'accuracy' => $validated['accuracy'] ?? null,
-                'altitude' => $validated['altitude'] ?? null,
-                'heading' => $validated['heading'] ?? null,
-                'speed' => $validated['speed'] ?? null,
-            ]);
+            // Check for significant location change to avoid unnecessary updates
+            $significantChange = $this->isSignificantLocationChange(
+                $profile,
+                $validated['latitude'],
+                $validated['longitude']
+            );
 
-            return ApiResource::success([
+            if ($significantChange) {
+                // Batch update location and related data
+                $profile->update([
+                    'latitude' => $validated['latitude'],
+                    'longitude' => $validated['longitude'],
+                    'location_updated_at' => now(),
+                ]);
+
+                // Update presence data with new location
+                $this->presenceService->markUserOnline($user);
+
+                // Clear location-related caches
+                $this->cacheService->flushByTags([
+                    "user_{$user->id}_location",
+                    "user_{$user->id}_matches",
+                    "nearby_users"
+                ]);
+
+                // Log significant location updates
+                Log::info('User location updated', [
+                    'user_id' => $user->id,
+                    'latitude' => $validated['latitude'],
+                    'longitude' => $validated['longitude'],
+                    'accuracy' => $validated['accuracy'] ?? null,
+                    'previous_lat' => $profile->getOriginal('latitude'),
+                    'previous_lng' => $profile->getOriginal('longitude'),
+                ]);
+            }
+
+            return ErrorHandlingService::successResponse([
                 'latitude' => $profile->latitude,
                 'longitude' => $profile->longitude,
                 'updated_at' => $profile->updated_at,
+                'location_updated_at' => $profile->location_updated_at,
+                'accuracy' => $validated['accuracy'] ?? null,
             ], 'Location updated successfully');
 
-        } catch (ValidationException $e) {
-            return ApiResource::error($e->errors(), 'Validation failed', 400);
         } catch (\Exception $e) {
-            Log::error('Failed to update user location', [
-                'user_id' => $request->user()?->id,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-            ]);
-
-            return ApiResource::error(null, 'Failed to update location', 500);
+            return ErrorHandlingService::handleException($e, 'update_location');
         }
+    }
+
+    /**
+     * Check if location change is significant enough to warrant an update
+     */
+    private function isSignificantLocationChange($profile, float $newLat, float $newLng): bool
+    {
+        if (!$profile->latitude || !$profile->longitude) {
+            return true; // First time setting location
+        }
+
+        // Calculate distance using Haversine formula (in meters)
+        $earthRadius = 6371000; // Earth's radius in meters
+        
+        $deltaLat = deg2rad($newLat - $profile->latitude);
+        $deltaLng = deg2rad($newLng - $profile->longitude);
+        
+        $a = sin($deltaLat / 2) * sin($deltaLat / 2) +
+             cos(deg2rad($profile->latitude)) * cos(deg2rad($newLat)) *
+             sin($deltaLng / 2) * sin($deltaLng / 2);
+        
+        $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
+        $distance = $earthRadius * $c;
+
+        // Only update if user moved more than 50 meters or hasn't updated in 5 minutes
+        $timeSinceLastUpdate = $profile->location_updated_at 
+            ? now()->diffInMinutes($profile->location_updated_at) 
+            : 999;
+
+        return $distance > 50 || $timeSinceLastUpdate > 5;
     }
 }

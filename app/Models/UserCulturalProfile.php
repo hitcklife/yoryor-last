@@ -25,13 +25,19 @@ class UserCulturalProfile extends Model
         'uzbek_cuisine_knowledge',
         'cultural_events_participation',
         'halal_lifestyle',
+        // Prayer/religious practice related fields
+        'observes_ramadan',
+        'prefers_halal_dates',
+        'mosque_attendance',
+        'quran_reading',
     ];
 
     protected $casts = [
         'native_languages' => 'array',
         'spoken_languages' => 'array',
-        'traditional_clothing_comfort' => 'boolean',
         'halal_lifestyle' => 'boolean',
+        'observes_ramadan' => 'boolean',
+        'prefers_halal_dates' => 'boolean',
     ];
 
     public function user(): BelongsTo

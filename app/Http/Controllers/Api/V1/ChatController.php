@@ -7,12 +7,16 @@ use App\Events\MessageEditedEvent;
 use App\Events\MessageReadEvent;
 use App\Events\NewMessageEvent;
 use App\Events\UnreadCountUpdateEvent;
+use App\Events\ConversationUpdated;
 use App\Http\Controllers\Controller;
 use App\Models\Chat;
 use App\Models\Message;
 use App\Models\MessageRead;
 use App\Models\User;
 use App\Services\MediaUploadService;
+use App\Services\CacheService;
+use App\Services\ValidationService;
+use App\Services\ErrorHandlingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -29,10 +33,12 @@ use Illuminate\Http\JsonResponse;
 class ChatController extends Controller
 {
     protected $mediaUploadService;
+    protected $cacheService;
 
-    public function __construct(MediaUploadService $mediaUploadService)
+    public function __construct(MediaUploadService $mediaUploadService, CacheService $cacheService)
     {
         $this->mediaUploadService = $mediaUploadService;
+        $this->cacheService = $cacheService;
     }
 
     /**
@@ -133,61 +139,49 @@ class ChatController extends Controller
         try {
             $user = $request->user();
             $perPage = $request->input('per_page', 10);
+            $page = $request->input('page', 1);
 
-            // Optimized query with better performance
-            $chats = $user->chats()
-                ->with([
-                    'lastMessage.sender:id,email',
-                    'users' => function($query) use ($user) {
-                        $query->where('users.id', '!=', $user->id)
-                              ->with(['profile:id,user_id,first_name,last_name,bio',
-                                     'profilePhoto:id,user_id,original_url,thumbnail_url,medium_url,is_profile_photo']);
+            return $this->cacheService->cacheUserChats($user->id, $page, $perPage, function() use ($user, $perPage) {
+                // Optimized query with better performance
+                $chats = $user->chats()
+                    ->with([
+                        'lastMessage.sender:id,email',
+                        'users' => function($query) use ($user) {
+                            $query->where('users.id', '!=', $user->id)
+                                  ->with(['profile:id,user_id,first_name,last_name,bio',
+                                         'profilePhoto:id,user_id,original_url,thumbnail_url,medium_url,is_profile_photo']);
+                        }
+                    ])
+                    ->withCount(['messages as unread_count' => function($query) use ($user) {
+                        $query->unreadByUser($user);
+                    }])
+                    ->orderBy('last_activity_at', 'desc')
+                    ->paginate($perPage);
+
+                // Transform the chats to include the other user and add read status to last message
+                $chats->getCollection()->transform(function ($chat) use ($user) {
+                    // Get the other user from the eager loaded relationship
+                    $otherUser = $chat->users->first();
+                    $chat->other_user = $otherUser;
+
+                    // Add read status to last message if it exists
+                    if ($chat->lastMessage) {
+                        $readStatus = $chat->lastMessage->getReadStatusFor($user);
+                        $chat->lastMessage->is_mine = $readStatus['is_mine'];
+                        $chat->lastMessage->is_read = $readStatus['is_read'];
+                        $chat->lastMessage->read_at = $readStatus['read_at'];
                     }
-                ])
-                ->withCount(['messages as unread_count' => function($query) use ($user) {
-                    $query->unreadByUser($user);
-                }])
-                ->orderBy('last_activity_at', 'desc')
-                ->paginate($perPage);
 
-            // Transform the chats to include the other user and add read status to last message
-            $chats->getCollection()->transform(function ($chat) use ($user) {
-                // Get the other user from the eager loaded relationship
-                $otherUser = $chat->users->first();
-                $chat->other_user = $otherUser;
+                    // Remove the users collection to clean up the response
+                    unset($chat->users);
 
-                // Add read status to last message if it exists
-                if ($chat->lastMessage) {
-                    $readStatus = $chat->lastMessage->getReadStatusFor($user);
-                    $chat->lastMessage->is_mine = $readStatus['is_mine'];
-                    $chat->lastMessage->is_read = $readStatus['is_read'];
-                    $chat->lastMessage->read_at = $readStatus['read_at'];
-                }
+                    return $chat;
+                });
 
-                // Remove the users collection to clean up the response
-                unset($chat->users);
-
-                return $chat;
+                return ErrorHandlingService::paginatedResponse($chats, 'chats');
             });
-
-            return response()->json([
-                'status' => 'success',
-                'data' => [
-                    'chats' => $chats->items(),
-                    'pagination' => [
-                        'total' => $chats->total(),
-                        'per_page' => $chats->perPage(),
-                        'current_page' => $chats->currentPage(),
-                        'last_page' => $chats->lastPage()
-                    ]
-                ]
-            ]);
         } catch (\Exception $e) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Failed to get chats',
-                'error' => $e->getMessage()
-            ], 500);
+            return ErrorHandlingService::handleException($e, 'get_chats');
         }
     }
 
@@ -258,7 +252,7 @@ class ChatController extends Controller
      */
     public function getChat(Request $request, int $id)
     {
-        $request->validate([
+        ValidationService::validateRequest($request, [
             'page' => 'sometimes|integer|min:1',
             'per_page' => 'sometimes|integer|min:1|max:100',
             'include_call_data' => 'sometimes|boolean'
@@ -523,9 +517,9 @@ class ChatController extends Controller
             }
         }
 
-        $validated = $request->validate([
-            'content' => ['required_without_all:media_url,media_file,message_type', 'string', 'nullable'],
-            'media_url' => ['required_without_all:content,media_file', 'string', 'nullable'],
+        $validated = ValidationService::validateRequest($request, [
+            'content' => ['required_without_all:media_url,media_file,message_type', 'string', 'nullable', 'max:2000'],
+            'media_url' => ['required_without_all:content,media_file', 'string', 'nullable', 'url'],
             'media_file' => ['required_without_all:content,media_url', 'file', 'nullable', 'max:100000'], // 100MB max file size
             'message_type' => ['string', 'in:text,image,video,audio,voice,file,location,call'],
             'media_data' => ['array', 'nullable'],
@@ -534,6 +528,18 @@ class ChatController extends Controller
 
         try {
             $user = $request->user();
+
+            // Validate and sanitize message content if provided
+            if (!empty($validated['content'])) {
+                $contentValidation = ValidationService::validateAndSanitizeMessage($validated['content']);
+                if (!$contentValidation['valid']) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => $contentValidation['message']
+                    ], 422);
+                }
+                $validated['content'] = $contentValidation['sanitized'];
+            }
 
             // Find chat and verify user access through relationship
             $chat = $user->chats()->findOrFail($id);
@@ -683,6 +689,11 @@ class ChatController extends Controller
             // Update chat activity
             $chat->updateLastActivity();
 
+            // Clear chat caches for all participants
+            $chat->users->each(function ($chatUser) {
+                $this->cacheService->invalidateUserCaches($chatUser->id);
+            });
+
             // Log message creation for debugging duplicate notifications
             Log::info('Message created and broadcasting event', [
                 'message_id' => $message->id,
@@ -694,7 +705,7 @@ class ChatController extends Controller
             // Broadcast real-time event
             broadcast(new NewMessageEvent($message))->toOthers();
 
-            // Broadcast unread count updates to other users in the chat
+            // Broadcast unread count updates and conversation updates to other users in the chat
             $otherUsers = $chat->users()->where('user_id', '!=', $user->id)->get();
             foreach ($otherUsers as $otherUser) {
                 $totalUnreadCount = $otherUser->getUnreadMessagesCount();
@@ -706,6 +717,20 @@ class ChatController extends Controller
                     $chat->id,
                     $chatUnreadCount
                 ))->toOthers();
+
+                // Broadcast conversation update event for real-time conversation list updates
+                broadcast(new ConversationUpdated($otherUser->id, 'new_message', [
+                    'chat_id' => $chat->id,
+                    'message' => [
+                        'id' => $message->id,
+                        'content' => $message->content,
+                        'sender_id' => $user->id,
+                        'sender_name' => $user->profile?->first_name ?? 'User',
+                        'type' => $messageType,
+                        'sent_at' => $message->sent_at->toIso8601String()
+                    ],
+                    'unread_count' => $chatUnreadCount
+                ]));
             }
 
             // Transform message for response
@@ -820,6 +845,9 @@ class ChatController extends Controller
                     'last_read_at' => now()
                 ]);
 
+                // Clear chat caches for the user
+                $this->cacheService->invalidateUserCaches($user->id);
+
                 // Broadcast read event
                 broadcast(new MessageReadEvent($chat, $user, $count))->toOthers();
 
@@ -833,6 +861,13 @@ class ChatController extends Controller
                     $chat->id,
                     $chatUnreadCount
                 ))->toOthers();
+
+                // Broadcast conversation update for real-time UI updates
+                broadcast(new ConversationUpdated($user->id, 'messages_read', [
+                    'chat_id' => $chat->id,
+                    'read_count' => $count,
+                    'unread_count' => $chatUnreadCount
+                ]));
             }
 
             return response()->json([
@@ -1267,6 +1302,11 @@ class ChatController extends Controller
                 'edited_at' => now()
             ]);
 
+            // Clear chat caches for all participants
+            $message->chat->users->each(function ($chatUser) {
+                $this->cacheService->invalidateUserCaches($chatUser->id);
+            });
+
             // Load relationships for response
             $message->load('sender:id,email');
 
@@ -1391,6 +1431,11 @@ class ChatController extends Controller
             // Store message info before deletion for event
             $messageId = $message->id;
             $chatId = $message->chat_id;
+
+            // Clear chat caches for all participants
+            $message->chat->users->each(function ($chatUser) {
+                $this->cacheService->invalidateUserCaches($chatUser->id);
+            });
 
             // Soft delete the message
             $message->delete();

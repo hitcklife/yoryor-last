@@ -107,11 +107,13 @@ use App\Services\AuthService;
 use App\Services\OtpService;
 use App\Services\TwoFactorAuthService;
 use App\Services\MediaUploadService;
+use App\Services\CacheService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
@@ -120,18 +122,21 @@ class AuthController extends Controller
     protected $otpService;
     protected $twoFactorAuthService;
     protected $mediaUploadService;
+    protected $cacheService;
 
     public function __construct(
         AuthService $authService,
         OtpService $otpService,
         TwoFactorAuthService $twoFactorAuthService,
-        MediaUploadService $mediaUploadService
+        MediaUploadService $mediaUploadService,
+        CacheService $cacheService
     )
     {
         $this->authService = $authService;
         $this->otpService = $otpService;
         $this->twoFactorAuthService = $twoFactorAuthService;
         $this->mediaUploadService = $mediaUploadService;
+        $this->cacheService = $cacheService;
     }
 
     /**
@@ -216,6 +221,7 @@ class AuthController extends Controller
             return response()->json([
                 'status' => 'error',
                 'message' => 'Validation failed',
+                'error_code' => 'VALIDATION_ERROR',
                 'errors' => $validator->errors()
             ], 422);
         }
@@ -273,10 +279,20 @@ class AuthController extends Controller
                 'data' => $responseData
             ]);
         } catch (ValidationException $e) {
+            // Check if it's an OTP validation error (invalid credentials)
+            $errors = $e->errors();
+            if (isset($errors['otp']) && $otp) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Invalid credentials',
+                    'error_code' => 'INVALID_CREDENTIALS'
+                ], 401);
+            }
+            
             return response()->json([
                 'status' => 'error',
                 'message' => 'Authentication failed',
-                'errors' => $e->errors()
+                'errors' => $errors
             ], 422);
         } catch (\Exception $e) {
             return response()->json([
@@ -372,6 +388,7 @@ class AuthController extends Controller
             return response()->json([
                 'status' => 'error',
                 'message' => 'Validation failed',
+                'error_code' => 'VALIDATION_ERROR',
                 'errors' => $validator->errors()
             ], 422);
         }
@@ -475,6 +492,7 @@ class AuthController extends Controller
             return response()->json([
                 'status' => 'error',
                 'message' => 'Validation failed',
+                'error_code' => 'VALIDATION_ERROR',
                 'errors' => $validator->errors()
             ], 422);
         }
@@ -835,12 +853,14 @@ class AuthController extends Controller
             'photos.*.name' => ['nullable', 'required_without:photos.*', 'string'], // For mobile app
             'photos.*.size' => ['nullable', 'string'], // For mobile app
             'mainPhotoIndex' => ['nullable', 'string'],
+            'profile_private' => ['nullable'], // Accept any value and convert to boolean
         ]);
 
         if ($validator->fails()) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Validation failed',
+                'error_code' => 'VALIDATION_ERROR',
                 'errors' => $validator->errors()
             ], 422);
         }
@@ -859,6 +879,15 @@ class AuthController extends Controller
                 ]
             ]);
         } catch (\Exception $e) {
+            // Check if it's a registration already completed error
+            if ($e->getMessage() === 'Registration already completed') {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Registration already completed',
+                    'error_code' => 'FORBIDDEN'
+                ], 403);
+            }
+            
             report($e);
             return response()->json([
                 'status' => 'error',
@@ -927,6 +956,15 @@ class AuthController extends Controller
                 'data' => $twoFactorData
             ]);
         } catch (\Exception $e) {
+            // Check if 2FA is already enabled
+            if ($e->getMessage() === 'Two-factor authentication is already enabled') {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Two-factor authentication is already enabled',
+                    'error_code' => 'ALREADY_ENABLED'
+                ], 409);
+            }
+            
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to enable two-factor authentication',
@@ -983,7 +1021,7 @@ class AuthController extends Controller
 
             return response()->json([
                 'status' => 'success',
-                'message' => 'Two-factor authentication disabled successfully'
+                'message' => 'Two-factor authentication disabled'
             ]);
         } catch (\Exception $e) {
             return response()->json([
@@ -1064,8 +1102,8 @@ class AuthController extends Controller
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Invalid two-factor authentication code',
-                    'error_code' => 'invalid_2fa_code'
-                ], 422);
+                    'error_code' => 'INVALID_CREDENTIALS'
+                ], 401);
             }
 
             return response()->json([
@@ -1120,27 +1158,47 @@ class AuthController extends Controller
      */
     public function checkEmail(Request $request)
     {
-        $validator = Validator::make($request->all(), [
-            'email' => ['required', 'string', 'email', 'max:255'],
-        ]);
+        try {
+            $validator = Validator::make($request->all(), [
+                'email' => ['required', 'string', 'email', 'max:255'],
+            ]);
 
-        if ($validator->fails()) {
+            if ($validator->fails()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Validation failed',
+                    'error_code' => 'VALIDATION_ERROR',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            $email = strtolower(trim($request->input('email')));
+
+            // Cache email checks for 5 minutes to reduce database load
+            $cacheKey = "email_check:" . md5($email);
+            $isTaken = $this->cacheService->remember($cacheKey, 300, function () use ($email) {
+                return User::where('email', $email)->exists();
+            });
+
+            return response()->json([
+                'status' => 'success',
+                'data' => [
+                    'is_taken' => $isTaken,
+                    'available' => !$isTaken,
+                    'email' => $email
+                ]
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Email check failed', [
+                'email' => $request->input('email'),
+                'error' => $e->getMessage()
+            ]);
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Validation failed',
-                'errors' => $validator->errors()
-            ], 422);
+                'message' => 'Failed to check email availability',
+                'error_code' => 'EMAIL_CHECK_FAILED'
+            ], 500);
         }
-
-        $email = $request->input('email');
-        $isTaken = User::where('email', $email)->exists();
-
-        return response()->json([
-            'status' => 'success',
-            'data' => [
-                'is_taken' => $isTaken,
-                'email' => $email
-            ]
-        ]);
     }
 }

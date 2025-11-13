@@ -54,7 +54,7 @@ class UserResource extends JsonResource
                             'latitude' => $this->profile->latitude,
                             'longitude' => $this->profile->longitude,
                             'marital_status' => $this->profile->status,
-                            'looking_for' => $this->profile->looking_for,
+                            'looking_for_relationship' => $this->profile->looking_for_relationship,
                             'bio' => $this->profile->bio ?? null,
                             'profession' => $this->profile->profession ?? null,
                             'interests' => $this->profile->interests ?? null,

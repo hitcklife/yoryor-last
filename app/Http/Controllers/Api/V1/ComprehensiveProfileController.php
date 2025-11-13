@@ -11,6 +11,7 @@ use App\Models\UserFamilyPreference;
 use App\Models\UserLocationPreference;
 use App\Models\UserCareerProfile;
 use App\Models\UserPhysicalProfile;
+use App\Services\CacheService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
@@ -18,6 +19,12 @@ use Illuminate\Support\Facades\DB;
 
 class ComprehensiveProfileController extends Controller
 {
+    protected $cacheService;
+
+    public function __construct(CacheService $cacheService)
+    {
+        $this->cacheService = $cacheService;
+    }
     /**
      * Get all profile information for the authenticated user
      *
@@ -26,31 +33,66 @@ class ComprehensiveProfileController extends Controller
      */
     public function getAllProfileData(Request $request): JsonResponse
     {
-        $user = $request->user();
-        
-        // Load all profile relationships
-        $user->load([
-            'profile',
-            'preference',
-            'culturalProfile',
-            'familyPreference',
-            'locationPreference',
-            'careerProfile',
-            'physicalProfile'
-        ]);
+        try {
+            $user = $request->user();
+            
+            return $this->cacheService->remember(
+                "comprehensive_profile:{$user->id}",
+                CacheService::TTL_MEDIUM,
+                function() use ($user) {
+                    // Load all profile relationships including country
+                    $user->load([
+                        'profile.country',
+                        'preference',
+                        'culturalProfile',
+                        'familyPreference',
+                        'locationPreference',
+                        'careerProfile',
+                        'physicalProfile'
+                    ]);
 
-        return response()->json([
-            'success' => true,
-            'data' => [
-                'basic_profile' => $user->profile,
-                'preferences' => $user->preference,
-                'cultural_profile' => $user->culturalProfile,
-                'family_preferences' => $user->familyPreference,
-                'location_preferences' => $user->locationPreference,
-                'career_profile' => $user->careerProfile,
-                'physical_profile' => $user->physicalProfile,
-            ]
-        ]);
+                    // Format basic profile to include country
+                    $basicProfile = $user->profile ? $user->profile->toArray() : null;
+                    if ($basicProfile && $user->profile) {
+                        // Load country directly if not already loaded
+                        if (!$user->profile->relationLoaded('country') && $user->profile->country_id) {
+                            $user->profile->load('country');
+                        }
+                        
+                        // Add country if it exists
+                        if ($user->profile->country) {
+                            $basicProfile['country'] = $user->profile->country->toArray();
+                        } else if ($user->profile->country_id) {
+                            // Fallback: fetch country directly if relationship failed
+                            $country = \App\Models\Country::find($user->profile->country_id);
+                            if ($country) {
+                                $basicProfile['country'] = $country->toArray();
+                            }
+                        }
+                    }
+
+                    return response()->json([
+                        'status' => 'success',
+                        'data' => [
+                            'basic_profile' => $basicProfile,
+                            'preferences' => $user->preference,
+                            'cultural_profile' => $user->culturalProfile,
+                            'family_preferences' => $user->familyPreference,
+                            'location_preferences' => $user->locationPreference,
+                            'career_profile' => $user->careerProfile,
+                            'physical_profile' => $user->physicalProfile,
+                        ]
+                    ]);
+                },
+                ["user_{$user->id}_profile", "user_{$user->id}_preferences"]
+            );
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to get profile data',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
@@ -76,7 +118,7 @@ class ComprehensiveProfileController extends Controller
             'basic_profile.province' => 'sometimes|string|max:50',
             'basic_profile.bio' => 'sometimes|string|max:1000',
             'basic_profile.interests' => 'sometimes|array',
-            'basic_profile.looking_for' => 'sometimes|in:casual,serious,friendship,all',
+            'basic_profile.looking_for_relationship' => 'sometimes|in:casual,serious,friendship,open',
             'basic_profile.occupation' => 'sometimes|string|max:100',
             'basic_profile.profession' => 'sometimes|string|max:100',
 
@@ -95,65 +137,99 @@ class ComprehensiveProfileController extends Controller
             'preferences.show_me_globally' => 'sometimes|boolean',
             'preferences.notification_preferences' => 'sometimes|array',
 
-            // Cultural profile validation
+            // Cultural profile validation - updated with new fields
             'cultural_profile' => 'sometimes|array',
             'cultural_profile.native_languages' => 'sometimes|array',
             'cultural_profile.spoken_languages' => 'sometimes|array',
             'cultural_profile.preferred_communication_language' => 'sometimes|string|max:50',
-            'cultural_profile.religion' => 'sometimes|in:muslim,christian,secular,other,prefer_not_to_say',
-            'cultural_profile.religiousness_level' => 'sometimes|in:very_religious,moderately_religious,not_religious,prefer_not_to_say',
-            'cultural_profile.ethnicity' => 'sometimes|string|max:100',
-            'cultural_profile.uzbek_region' => 'sometimes|string|max:100',
-            'cultural_profile.lifestyle_type' => 'sometimes|in:traditional,modern,mix_of_both',
-            'cultural_profile.gender_role_views' => 'sometimes|in:traditional,modern,flexible',
-            'cultural_profile.traditional_clothing_comfort' => 'sometimes|boolean',
-            'cultural_profile.uzbek_cuisine_knowledge' => 'sometimes|in:expert,good,basic,learning',
-            'cultural_profile.cultural_events_participation' => 'sometimes|in:very_active,active,sometimes,rarely',
+            'cultural_profile.religion' => 'sometimes|in:islam,christianity,judaism,buddhism,agnostic,atheist,spiritual,other,prefer_not_to_say',
+            'cultural_profile.religiousness_level' => 'sometimes|in:very_religious,religious,somewhat_religious,not_religious,cultural_only',
+            'cultural_profile.ethnicity' => 'sometimes|in:uzbek,russian,tajik,kazakh,tatar,kyrgyz,korean,other',
+            'cultural_profile.uzbek_region' => 'sometimes|in:tashkent,samarkand,bukhara,andijan,namangan,fergana,khorezm,karakalpakstan,kashkadarya,surkhandarya,navoiy,jizzakh,sirdaryo',
+            'cultural_profile.lifestyle_type' => 'sometimes|in:traditional,modern,mix',
+            'cultural_profile.gender_role_views' => 'sometimes|in:egalitarian,balanced,traditional',
+            'cultural_profile.traditional_clothing_comfort' => 'sometimes|in:very_uncomfortable,uncomfortable,neutral,comfortable,very_comfortable',
+            'cultural_profile.uzbek_cuisine_knowledge' => 'sometimes|in:none,basic,good,expert',
+            'cultural_profile.cultural_events_participation' => 'sometimes|in:never,occasionally,monthly,weekly,daily',
             'cultural_profile.halal_lifestyle' => 'sometimes|boolean',
+            'cultural_profile.observes_ramadan' => 'sometimes|boolean',
+            'cultural_profile.mosque_attendance' => 'sometimes|in:never,occasionally,monthly,weekly,daily',
+            'cultural_profile.quran_reading' => 'sometimes|in:never,occasionally,monthly,weekly,daily',
 
-            // Family preferences validation
+            // Family preferences validation - updated with new fields
             'family_preferences' => 'sometimes|array',
-            'family_preferences.family_importance' => 'sometimes|in:very_important,important,somewhat_important,not_important',
-            'family_preferences.wants_children' => 'sometimes|in:yes,no,maybe,have_and_want_more,have_and_dont_want_more',
-            'family_preferences.number_of_children_wanted' => 'sometimes|integer|min:0|max:10',
-            'family_preferences.living_with_family' => 'sometimes|boolean',
+            'family_preferences.marriage_intention' => 'sometimes|in:seeking_marriage,open_to_marriage,not_ready_yet,undecided',
+            'family_preferences.children_preference' => 'sometimes|in:want_children,have_and_want_more,have_and_dont_want_more,dont_want_children,undecided',
+            'family_preferences.current_children' => 'sometimes|integer|min:0|max:20',
+            'family_preferences.family_values' => 'sometimes|array',
+            'family_preferences.family_values.*' => 'sometimes|in:close_knit,traditional,family_first,independent,supportive,respect_elders',
+            'family_preferences.living_situation' => 'sometimes|in:alone,with_family,with_roommates,with_partner,other',
+            'family_preferences.family_involvement' => 'sometimes|string|max:1000',
+            'family_preferences.marriage_timeline' => 'sometimes|in:within_6_months,within_1_year,within_2_years,within_5_years,no_timeline',
+            'family_preferences.family_importance' => 'sometimes|in:extremely_important,very_important,moderately_important,somewhat_important,not_important',
             'family_preferences.family_approval_important' => 'sometimes|boolean',
-            'family_preferences.marriage_timeline' => 'sometimes|in:within_1_year,1_2_years,2_5_years,someday,never',
             'family_preferences.previous_marriages' => 'sometimes|integer|min:0|max:10',
-            'family_preferences.homemaker_preference' => 'sometimes|in:yes,no,flexible,both_work',
+            'family_preferences.homemaker_preference' => 'sometimes|in:prefer_traditional_roles,both_work_equally,flexible_arrangement,career_focused,no_preference',
+            // Legacy fields
+            'family_preferences.number_of_children_wanted' => 'sometimes|integer|min:0|max:20',
+            'family_preferences.living_with_family' => 'sometimes|boolean',
 
-            // Location preferences validation
+            // Location preferences validation - updated with new fields
             'location_preferences' => 'sometimes|array',
-            'location_preferences.immigration_status' => 'sometimes|in:citizen,permanent_resident,work_visa,student,other',
-            'location_preferences.years_in_current_country' => 'sometimes|integer|min:0|max:100',
-            'location_preferences.plans_to_return_uzbekistan' => 'sometimes|in:yes,no,maybe,for_visits',
-            'location_preferences.uzbekistan_visit_frequency' => 'sometimes|in:yearly,every_few_years,rarely,never',
-            'location_preferences.willing_to_relocate' => 'sometimes|boolean',
+            'location_preferences.immigration_status' => 'sometimes|in:citizen,permanent_resident,work_visa,student_visa,tourist_visa,asylum_refugee,other',
+            'location_preferences.years_in_current_country' => 'sometimes|integer|min:0|max:100|nullable',
+            'location_preferences.plans_to_return_uzbekistan' => 'sometimes|in:definitely_yes,probably_yes,maybe,probably_no,definitely_no,undecided',
+            'location_preferences.uzbekistan_visit_frequency' => 'sometimes|in:never,rarely,annually,twice_yearly,quarterly,monthly,frequently',
+            'location_preferences.willing_to_relocate' => 'sometimes|in:no,within_city,within_state,within_country,internationally,for_right_person',
             'location_preferences.relocation_countries' => 'sometimes|array',
+            'location_preferences.relocation_countries.*' => 'sometimes|in:uzbekistan,united_states,canada,united_kingdom,germany,australia,turkey,russia,kazakhstan,other',
+            'location_preferences.preferred_locations' => 'sometimes|array',
+            'location_preferences.preferred_locations.*' => 'sometimes|in:city_center,suburbs,countryside,near_family,near_work,quiet_area',
+            'location_preferences.live_with_family' => 'sometimes|boolean',
+            'location_preferences.future_location_plans' => 'sometimes|string|max:1000',
 
-            // Career profile validation
+            // Career profile validation - updated with new fields
             'career_profile' => 'sometimes|array',
-            'career_profile.education_level' => 'sometimes|in:high_school,bachelors,masters,phd,vocational,other',
+            'career_profile.education_level' => 'sometimes|in:high_school,associate,bachelor,master,doctorate,professional,trade_school,other',
+            'career_profile.field_of_study' => 'sometimes|string|max:255',
+            'career_profile.work_status' => 'sometimes|in:full_time,part_time,self_employed,freelance,student,unemployed,retired',
+            'career_profile.occupation' => 'sometimes|string|max:255',
+            'career_profile.employer' => 'sometimes|string|max:255',
+            'career_profile.career_goals' => 'sometimes|array',
+            'career_profile.career_goals.*' => 'sometimes|in:entrepreneurship,leadership,expertise,work_life_balance,financial_success,make_impact',
+            'career_profile.income_range' => 'sometimes|in:under_25k,25k_50k,50k_75k,75k_100k,100k_150k,150k_plus,prefer_not_to_say',
+            // Legacy fields
             'career_profile.university_name' => 'sometimes|string|max:200',
-            'career_profile.income_range' => 'sometimes|in:prefer_not_to_say,under_25k,25k_50k,50k_75k,75k_100k,100k_plus',
             'career_profile.owns_property' => 'sometimes|boolean',
             'career_profile.financial_goals' => 'sometimes|string',
+            'career_profile.profession' => 'sometimes|string|max:255',
+            'career_profile.company' => 'sometimes|string|max:255',
+            'career_profile.job_title' => 'sometimes|string|max:255',
+            'career_profile.income' => 'sometimes|string|max:100',
 
-            // Physical profile validation
+            // Physical profile validation - updated with new fields
             'physical_profile' => 'sometimes|array',
             'physical_profile.height' => 'sometimes|integer|min:100|max:250',
-            'physical_profile.body_type' => 'sometimes|in:slim,athletic,average,curvy,plus_size',
-            'physical_profile.hair_color' => 'sometimes|string|max:50',
-            'physical_profile.eye_color' => 'sometimes|string|max:50',
-            'physical_profile.fitness_level' => 'sometimes|in:very_active,active,moderate,sedentary',
+            'physical_profile.weight' => 'sometimes|numeric|min:30|max:300',
+            'physical_profile.smoking_habit' => 'sometimes|in:never,socially,regularly,trying_to_quit',
+            'physical_profile.drinking_habit' => 'sometimes|in:never,socially,occasionally,regularly',
+            'physical_profile.exercise_frequency' => 'sometimes|in:never,rarely,1_2_week,3_4_week,daily',
+            'physical_profile.diet_preference' => 'sometimes|in:everything,vegetarian,vegan,halal,kosher,pescatarian,keto',
+            'physical_profile.pet_preference' => 'sometimes|in:love_pets,have_pets,allergic,dont_like,no_preference',
+            'physical_profile.hobbies' => 'sometimes|array',
+            'physical_profile.hobbies.*' => 'sometimes|in:reading,cooking,travel,sports,music,movies,gaming,art,photography,hiking,dancing,meditation',
+            'physical_profile.sleep_schedule' => 'sometimes|string|max:255',
+            // Legacy fields
+            'physical_profile.fitness_level' => 'sometimes|in:never,rarely,1_2_week,3_4_week,daily',
             'physical_profile.dietary_restrictions' => 'sometimes|array',
             'physical_profile.smoking_status' => 'sometimes|in:never,socially,regularly,trying_to_quit',
-            'physical_profile.drinking_status' => 'sometimes|in:never,socially,regularly,only_special_occasions',
+            'physical_profile.drinking_status' => 'sometimes|in:never,socially,occasionally,regularly',
+            'physical_profile.diet' => 'sometimes|in:everything,vegetarian,vegan,halal,kosher,pescatarian,keto',
         ]);
 
         if ($validator->fails()) {
             return response()->json([
-                'success' => false,
+                'status' => 'error',
                 'errors' => $validator->errors()
             ], 422);
         }
@@ -198,9 +274,12 @@ class ComprehensiveProfileController extends Controller
 
             DB::commit();
 
-            // Return updated profile data
+            // Clear user profile cache
+            $this->cacheService->invalidateUserCaches($user->id);
+
+            // Return updated profile data including country
             $user->load([
-                'profile',
+                'profile.country',
                 'preference',
                 'culturalProfile',
                 'familyPreference',
@@ -209,11 +288,31 @@ class ComprehensiveProfileController extends Controller
                 'physicalProfile'
             ]);
 
+            // Format basic profile to include country
+            $basicProfile = $user->profile ? $user->profile->toArray() : null;
+            if ($basicProfile && $user->profile) {
+                // Load country directly if not already loaded
+                if (!$user->profile->relationLoaded('country') && $user->profile->country_id) {
+                    $user->profile->load('country');
+                }
+                
+                // Add country if it exists
+                if ($user->profile->country) {
+                    $basicProfile['country'] = $user->profile->country->toArray();
+                } else if ($user->profile->country_id) {
+                    // Fallback: fetch country directly if relationship failed
+                    $country = \App\Models\Country::find($user->profile->country_id);
+                    if ($country) {
+                        $basicProfile['country'] = $country->toArray();
+                    }
+                }
+            }
+
             return response()->json([
-                'success' => true,
+                'status' => 'success',
                 'message' => 'Profile updated successfully',
                 'data' => [
-                    'basic_profile' => $user->profile,
+                    'basic_profile' => $basicProfile,
                     'preferences' => $user->preference,
                     'cultural_profile' => $user->culturalProfile,
                     'family_preferences' => $user->familyPreference,
@@ -226,7 +325,7 @@ class ComprehensiveProfileController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json([
-                'success' => false,
+                'status' => 'error',
                 'message' => 'Failed to update profile',
                 'error' => $e->getMessage()
             ], 500);

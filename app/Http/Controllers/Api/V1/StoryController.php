@@ -8,6 +8,7 @@ use App\Http\Resources\StoryResource;
 use App\Models\UserStory;
 use App\Models\User;
 use App\Services\MediaUploadService;
+use App\Services\CacheService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
@@ -24,10 +25,12 @@ use Illuminate\Support\Facades\DB;
 class StoryController extends Controller
 {
     protected $mediaUploadService;
+    protected $cacheService;
 
-    public function __construct(MediaUploadService $mediaUploadService)
+    public function __construct(MediaUploadService $mediaUploadService, CacheService $cacheService)
     {
         $this->mediaUploadService = $mediaUploadService;
+        $this->cacheService = $cacheService;
     }
 
     /**
@@ -96,23 +99,30 @@ class StoryController extends Controller
         try {
             $user = $request->user();
 
-            // Get IDs of users that the current user has matched with (mutual matches)
-            $matchedUserIds = $user->mutualMatches()
-                ->pluck('matched_user_id')
-                ->toArray();
+            return $this->cacheService->remember(
+                "matched_stories:{$user->id}",
+                CacheService::TTL_SHORT, // Short TTL since stories expire in 24h
+                function() use ($user) {
+                    // Get IDs of users that the current user has matched with (mutual matches)
+                    $matchedUserIds = $user->mutualMatches()
+                        ->pluck('matched_user_id')
+                        ->toArray();
 
-            // Get active stories from matched users
-            $stories = UserStory::whereIn('user_id', $matchedUserIds)
-                ->where('status', 'active')
-                ->where('expires_at', '>', now())
-                ->with('user.profile', 'user.profilePhoto:id,user_id,original_url,thumbnail_url,medium_url,is_profile_photo')
-                ->orderBy('created_at', 'desc')
-                ->get();
+                    // Get active stories from matched users
+                    $stories = UserStory::whereIn('user_id', $matchedUserIds)
+                        ->where('status', 'active')
+                        ->where('expires_at', '>', now())
+                        ->with('user.profile', 'user.profilePhoto:id,user_id,original_url,thumbnail_url,medium_url,is_profile_photo')
+                        ->orderBy('created_at', 'desc')
+                        ->get();
 
-            return response()->json([
-                'status' => 'success',
-                'data' => StoryResource::collection($stories)
-            ]);
+                    return response()->json([
+                        'status' => 'success',
+                        'data' => StoryResource::collection($stories)
+                    ]);
+                },
+                ["user_{$user->id}_stories", "user_{$user->id}_matches"]
+            );
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
@@ -261,6 +271,13 @@ class StoryController extends Controller
 
             // Create the story record
             $story = $this->createStoryRecord($user->id, $uploadResult, $caption);
+
+            // Clear story caches for all users who matched with this user
+            $user->mutualMatches()->each(function ($match) {
+                $this->cacheService->invalidateUserCaches($match->matched_user_id);
+            });
+            // Also clear cache for the story creator
+            $this->cacheService->invalidateUserCaches($user->id);
 
             // Log successful story creation
             Log::info('Story created successfully', [
@@ -493,6 +510,13 @@ class StoryController extends Controller
             // Delete the story record
             $story->delete();
 
+            // Clear story caches for all users who matched with this user
+            $user->mutualMatches()->each(function ($match) {
+                $this->cacheService->invalidateUserCaches($match->matched_user_id);
+            });
+            // Also clear cache for the story creator
+            $this->cacheService->invalidateUserCaches($user->id);
+
             // Log successful deletion
             Log::info('Story deleted successfully', [
                 'user_id' => $user->id,
@@ -652,12 +676,20 @@ class StoryController extends Controller
     {
         try {
             $user = $request->user();
-            $stories = $user->stories()->orderBy('created_at', 'desc')->get();
 
-            return response()->json([
-                'status' => 'success',
-                'data' => StoryResource::collection($stories)
-            ]);
+            return $this->cacheService->remember(
+                "user_stories:{$user->id}",
+                CacheService::TTL_SHORT,
+                function() use ($user) {
+                    $stories = $user->stories()->orderBy('created_at', 'desc')->get();
+
+                    return response()->json([
+                        'status' => 'success',
+                        'data' => StoryResource::collection($stories)
+                    ]);
+                },
+                ["user_{$user->id}_stories"]
+            );
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',

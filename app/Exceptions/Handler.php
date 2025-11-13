@@ -43,6 +43,19 @@ class Handler extends ExceptionHandler
     }
 
     /**
+     * Handle unauthenticated users for web routes
+     */
+    protected function unauthenticated($request, AuthenticationException $exception)
+    {
+        if ($request->expectsJson()) {
+            return response()->json(['message' => 'Unauthenticated.'], 401);
+        }
+
+        // Redirect to start page for web routes
+        return redirect()->route('start');
+    }
+
+    /**
      * Handle API exceptions
      *
      * @param \Throwable $exception

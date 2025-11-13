@@ -132,7 +132,7 @@ class AgoraController extends Controller
             ], 409);
         }
 
-        $receiver = User::findOrFail($receiverId);
+        $receiver = User::with('profile')->findOrFail($receiverId);
 
         try {
             $call = $this->agoraService->createCall($caller, $receiver, $request->type);
@@ -185,7 +185,7 @@ class AgoraController extends Controller
      */
     public function joinCall(Request $request, int $callId): JsonResponse
     {
-        $call = Call::findOrFail($callId);
+        $call = Call::with(['caller.profile', 'receiver.profile'])->findOrFail($callId);
         $user = Auth::user();
 
         // Check if the user is the receiver of the call
@@ -255,7 +255,7 @@ class AgoraController extends Controller
      */
     public function endCall(Request $request, int $callId): JsonResponse
     {
-        $call = Call::findOrFail($callId);
+        $call = Call::with(['caller.profile', 'receiver.profile'])->findOrFail($callId);
         $user = Auth::user();
 
         // Check if the user is part of the call
@@ -314,7 +314,7 @@ class AgoraController extends Controller
      */
     public function rejectCall(Request $request, int $callId): JsonResponse
     {
-        $call = Call::findOrFail($callId);
+        $call = Call::with(['caller.profile', 'receiver.profile'])->findOrFail($callId);
         $user = Auth::user();
 
         // Check if the user is the receiver of the call

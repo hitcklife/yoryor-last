@@ -24,6 +24,11 @@ class TwoFactorAuthService
      */
     public function enableTwoFactor(User $user): array
     {
+        // Check if already enabled
+        if ($user->two_factor_enabled) {
+            throw new \Exception('Two-factor authentication is already enabled');
+        }
+
         // Generate a secret key
         $secretKey = $this->google2fa->generateSecretKey();
 
@@ -47,7 +52,7 @@ class TwoFactorAuthService
         return [
             'secret_key' => $secretKey,
             'qr_code_url' => $qrCodeUrl,
-            'recovery_codes' => $recoveryCodes,
+            'backup_codes' => $recoveryCodes,  // Changed from recovery_codes to backup_codes
         ];
     }
 

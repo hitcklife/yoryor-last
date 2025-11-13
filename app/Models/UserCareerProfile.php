@@ -13,14 +13,26 @@ class UserCareerProfile extends Model
     protected $fillable = [
         'user_id',
         'education_level',
-        'university_name',
+        'field_of_study',
+        'work_status',
+        'occupation',
+        'employer',
+        'career_goals',
         'income_range',
+        
+        // Legacy fields for backward compatibility
+        'profession',
+        'company',
+        'job_title',
+        'income',
+        'university_name',
         'owns_property',
         'financial_goals',
     ];
 
     protected $casts = [
         'owns_property' => 'boolean',
+        'career_goals' => 'array',
     ];
 
     public function user(): BelongsTo

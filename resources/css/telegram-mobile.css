@@ -1,0 +1,303 @@
+/* Telegram WebView Mobile Optimizations */
+
+/* Detect Telegram WebView */
+@supports (-webkit-overflow-scrolling: touch) {
+    /* iOS Telegram WebView specific styles */
+    body {
+        -webkit-overflow-scrolling: touch;
+        -webkit-tap-highlight-color: transparent;
+        -webkit-touch-callout: none;
+    }
+}
+
+/* Mobile-first base styles */
+:root {
+    --telegram-blue: #0088cc;
+    --telegram-bg: #ffffff;
+    --safe-area-inset-top: env(safe-area-inset-top);
+    --safe-area-inset-bottom: env(safe-area-inset-bottom);
+}
+
+/* Telegram WebView Container */
+.telegram-container {
+    min-height: 100vh;
+    padding-top: var(--safe-area-inset-top);
+    padding-bottom: var(--safe-area-inset-bottom);
+    overflow-x: hidden;
+    width: 100%;
+}
+
+/* Mobile Typography Optimization */
+@media (max-width: 768px) {
+    html {
+        font-size: 14px;
+    }
+    
+    h1 {
+        font-size: 1.75rem !important;
+        line-height: 1.2 !important;
+    }
+    
+    h2 {
+        font-size: 1.5rem !important;
+        line-height: 1.3 !important;
+    }
+    
+    h3 {
+        font-size: 1.25rem !important;
+    }
+    
+    p {
+        font-size: 1rem !important;
+        line-height: 1.5 !important;
+    }
+}
+
+/* Mobile Hero Section */
+@media (max-width: 768px) {
+    .hero-section {
+        min-height: auto;
+        padding: 2rem 1rem;
+    }
+    
+    .hero-section .grid {
+        grid-template-columns: 1fr !important;
+        gap: 2rem !important;
+    }
+    
+    /* Hide phone mockup on mobile */
+    .phone-mockup {
+        display: none !important;
+    }
+}
+
+/* Mobile Cards and Sections */
+@media (max-width: 768px) {
+    .card, .rounded-2xl {
+        border-radius: 1rem !important;
+        padding: 1.5rem !important;
+    }
+    
+    .section-padding {
+        padding: 3rem 1rem !important;
+    }
+    
+    /* Stack grid items on mobile */
+    .grid {
+        grid-template-columns: 1fr !important;
+        gap: 1rem !important;
+    }
+}
+
+/* Telegram-specific buttons */
+.telegram-button {
+    background: var(--telegram-blue);
+    color: white;
+    padding: 0.875rem 1.5rem;
+    border-radius: 0.5rem;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    max-width: 320px;
+    margin: 0 auto;
+    transition: transform 0.2s, box-shadow 0.2s;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.telegram-button:active {
+    transform: scale(0.98);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Mobile Navigation */
+.mobile-nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: white;
+    border-top: 1px solid #e5e7eb;
+    padding: 0.5rem;
+    z-index: 50;
+    display: flex;
+    justify-content: space-around;
+    padding-bottom: calc(0.5rem + var(--safe-area-inset-bottom));
+}
+
+.mobile-nav-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 0.5rem;
+    color: #6b7280;
+    transition: color 0.2s;
+}
+
+.mobile-nav-item.active {
+    color: var(--telegram-blue);
+}
+
+/* Simplified animations for mobile */
+@media (max-width: 768px) {
+    .animate-fade-in,
+    .animate-slide-up,
+    .animate-bounce,
+    .animate-float,
+    .animate-float-slow,
+    .animate-float-reverse {
+        animation: none !important;
+        opacity: 1 !important;
+        transform: none !important;
+    }
+    
+    /* Simple fade-in for essential elements */
+    .mobile-fade-in {
+        animation: mobileFadeIn 0.3s ease-out;
+    }
+    
+    @keyframes mobileFadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+}
+
+/* Reduce backdrop filters on mobile for performance */
+@media (max-width: 768px) {
+    .glass-card {
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+        background: rgba(255, 255, 255, 0.95) !important;
+    }
+}
+
+/* Touch-friendly spacing */
+@media (max-width: 768px) {
+    button, a, .clickable {
+        min-height: 44px;
+        min-width: 44px;
+    }
+    
+    .space-y-4 > * {
+        margin-top: 1rem !important;
+    }
+    
+    .space-y-6 > * {
+        margin-top: 1.5rem !important;
+    }
+}
+
+/* Telegram WebView specific QR code handling */
+@media (max-width: 768px) {
+    .qr-code-container {
+        display: none !important;
+    }
+    
+    .telegram-direct-link {
+        display: block !important;
+    }
+}
+
+/* Performance optimizations for low-end devices */
+@media (max-width: 768px) and (hover: none) {
+    /* Remove hover effects on touch devices */
+    *:hover {
+        transform: none !important;
+        box-shadow: none !important;
+    }
+    
+    /* Simplify gradients */
+    .bg-gradient-to-r,
+    .bg-gradient-to-br,
+    .bg-gradient-to-l {
+        background: var(--telegram-blue) !important;
+    }
+}
+
+/* Optimize images for mobile */
+@media (max-width: 768px) {
+    img {
+        max-width: 100%;
+        height: auto;
+        loading: lazy;
+    }
+    
+    /* Hide decorative elements */
+    .decorative,
+    .absolute.opacity-5,
+    .absolute.opacity-10 {
+        display: none !important;
+    }
+}
+
+/* Telegram color scheme support */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --telegram-bg: #1c1c1d;
+        --telegram-blue: #3390ec;
+    }
+    
+    body {
+        background: var(--telegram-bg);
+        color: #ffffff;
+    }
+    
+    .bg-white {
+        background: #2c2c2e !important;
+    }
+    
+    .text-gray-900 {
+        color: #ffffff !important;
+    }
+    
+    .text-gray-600 {
+        color: #a1a1a3 !important;
+    }
+}
+
+/* Smooth scrolling for Telegram WebView */
+html {
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* Fix for Telegram WebView viewport */
+@viewport {
+    width: device-width;
+    initial-scale: 1;
+    maximum-scale: 1;
+    user-scalable: no;
+}
+
+/* Language switcher mobile optimization */
+@media (max-width: 768px) {
+    .language-switcher {
+        position: fixed;
+        top: 1rem;
+        right: 1rem;
+        z-index: 100;
+    }
+    
+    .language-dropdown {
+        right: 0;
+        left: auto;
+        min-width: 150px;
+    }
+}
+
+/* Free Forever Banner Mobile */
+@media (max-width: 768px) {
+    .free-forever-banner {
+        position: sticky;
+        top: 0;
+        z-index: 90;
+        font-size: 0.875rem;
+        padding: 0.5rem;
+    }
+    
+    .free-forever-banner .animate-pulse {
+        animation: none;
+    }
+}

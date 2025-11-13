@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\UserBlock;
 use App\Models\UserReport;
 use App\Services\ImageProcessingService;
+use App\Services\CacheService;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -16,10 +17,12 @@ use Illuminate\Support\Facades\DB;
 class ProfileController extends Controller
 {
     protected $imageProcessingService;
+    protected $cacheService;
 
-    public function __construct(ImageProcessingService $imageProcessingService)
+    public function __construct(ImageProcessingService $imageProcessingService, CacheService $cacheService)
     {
         $this->imageProcessingService = $imageProcessingService;
+        $this->cacheService = $cacheService;
     }
 
     /**
@@ -98,7 +101,7 @@ class ProfileController extends Controller
             'occupation' => ['sometimes', 'nullable', 'string', 'max:100'],
             'interests' => ['sometimes', 'array'],
             'interests.*' => ['string', 'max:50'],
-            'looking_for' => ['sometimes', 'in:casual,serious,friendship,all'],
+            'looking_for_relationship' => ['sometimes', 'in:casual,serious,friendship,open'],
         ]);
 
         try {
@@ -118,6 +121,9 @@ class ProfileController extends Controller
                     $profile->update(['profile_completed_at' => now()]);
                 }
             });
+
+            // Clear profile caches after update
+            $this->cacheService->invalidateUserCaches($profile->user_id);
 
             // Load fresh data with relationships
             $profile->load([
@@ -171,29 +177,32 @@ class ProfileController extends Controller
     {
         $user = $request->user();
 
-        $profile = $user->profile()->with([
-            'country:id,name,code'
-        ])->first();
+        return $this->cacheService->cacheUserProfile($user->id, function() use ($user) {
+            $profile = $user->profile()->with([
+                'country:id,name,code'
+            ])->first();
 
-        if (!$profile) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Profile not found',
-                'error_code' => 'profile_not_found'
-            ], 404);
-        }
-
-        // Load user's photos
-        $user->load([
-            'photos' => function($query) {
-                $query->approved()->ordered()->select('id', 'user_id', 'original_url', 'medium_url', 'thumbnail_url', 'is_profile_photo', 'order');
+            if (!$profile) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Profile not found',
+                    'error_code' => 'profile_not_found'
+                ], 404);
             }
-        ]);
 
-        return response()->json([
-            'status' => 'success',
-            'data' => $this->transformProfile($profile, true)
-        ]);
+            // Load user's photos
+            $user->load([
+                'photos' => function($query) {
+                    $query->approved()->ordered()->select('id', 'user_id', 'original_url', 'medium_url', 'thumbnail_url', 'is_profile_photo', 'order');
+                }
+            ]);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Profile retrieved successfully',
+                'data' => $this->transformProfile($profile, true)
+            ]);
+        });
     }
 
     /**
@@ -234,61 +243,75 @@ class ProfileController extends Controller
     {
         try {
             $currentUser = $request->user();
-            $targetUser = User::findOrFail($userId);
+            
+            // Use caching with composite key that includes both users to handle relationship status
+            $cacheKey = "user_profile_{$userId}_viewer_{$currentUser->id}";
+            
+            return $this->cacheService->remember($cacheKey, CacheService::TTL_MEDIUM, function() use ($currentUser, $userId) {
+                $targetUser = User::with([
+                    'profile.country:id,name,code',
+                    'profilePhoto:id,user_id,original_url,thumbnail_url,medium_url,is_profile_photo',
+                    'photos' => function($query) {
+                        $query->where('is_private', false)
+                              ->where('status', 'approved')
+                              ->orderBy('order', 'asc')
+                              ->select('id', 'user_id', 'original_url', 'thumbnail_url', 'medium_url', 'is_profile_photo', 'order', 'status');
+                    }
+                ])->findOrFail($userId);
 
-            // Check if users can view each other's profiles
-            if (!$currentUser->canViewProfile($targetUser)) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'You cannot view this profile',
-                    'error_code' => 'profile_blocked'
-                ], 403);
-            }
-
-            $profile = $targetUser->profile;
-            if (!$profile) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Profile not found',
-                    'error_code' => 'profile_not_found'
-                ], 404);
-            }
-
-            // Load comprehensive profile data with all relationships
-            $targetUser->load([
-                'profile.country:id,name,code',
-                'preference',
-                'culturalProfile',
-                'familyPreference',
-                'locationPreference',
-                'careerProfile',
-                'physicalProfile',
-                'photos' => function($query) {
-                    $query->approved()->public()->ordered()->select('id', 'user_id', 'original_url', 'medium_url', 'thumbnail_url', 'is_profile_photo', 'order');
-                },
-                'profilePhoto:id,user_id,original_url,medium_url,thumbnail_url',
-                'activeStories' => function($query) {
-                    $query->select('id', 'user_id', 'media_url', 'type', 'created_at');
+                // Check if users can view each other's profiles
+                if (!$currentUser->canViewProfile($targetUser)) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'You cannot view this profile',
+                        'error_code' => 'profile_blocked'
+                    ], 403);
                 }
-            ]);
 
-            // Increment profile views
-            $profile->increment('profile_views');
+                $profile = $targetUser->profile;
+                if (!$profile) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Profile not found',
+                        'error_code' => 'profile_not_found'
+                    ], 404);
+                }
 
-            return response()->json([
-                'status' => 'success',
-                'data' => [
-                    'profile' => $this->transformComprehensiveProfile($targetUser, false),
-                    'relationship_status' => [
-                        'is_matched' => $currentUser->hasMatched($targetUser),
-                        'is_blocked' => $currentUser->hasBlocked($targetUser),
-                        'has_reported' => $currentUser->hasReported($targetUser),
-                        'has_liked' => $currentUser->hasLiked($targetUser),
-                        'has_disliked' => $currentUser->hasDisliked($targetUser),
+                // Load comprehensive profile data with all relationships
+                $targetUser->load([
+                    'profile.country:id,name,code',
+                    'preference',
+                    'culturalProfile',
+                    'familyPreference',
+                    'locationPreference',
+                    'careerProfile',
+                    'physicalProfile',
+                    'photos' => function($query) {
+                        $query->approved()->public()->ordered()->select('id', 'user_id', 'original_url', 'medium_url', 'thumbnail_url', 'is_profile_photo', 'order');
+                    },
+                    'profilePhoto:id,user_id,original_url,medium_url,thumbnail_url',
+                    'activeStories' => function($query) {
+                        $query->select('id', 'user_id', 'media_url', 'type', 'created_at');
+                    }
+                ]);
+
+                return response()->json([
+                    'status' => 'success',
+                    'data' => [
+                        'profile' => $this->transformComprehensiveProfile($targetUser, false),
+                        'relationship_status' => [
+                            'is_matched' => $currentUser->hasMatched($targetUser),
+                            'is_blocked' => $currentUser->hasBlocked($targetUser),
+                            'has_reported' => $currentUser->hasReported($targetUser),
+                            'has_liked' => $currentUser->hasLiked($targetUser),
+                            'has_disliked' => $currentUser->hasDisliked($targetUser),
+                        ]
                     ]
-                ]
-            ]);
+                ]);
+            }, ["user_{$userId}_profile", "user_{$currentUser->id}_relationships"]);
 
+            // Note: We increment profile views outside cache to ensure it's always counted
+            // This is done after the cached response is returned
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return response()->json([
                 'status' => 'error',
@@ -301,6 +324,16 @@ class ProfileController extends Controller
                 'message' => 'Failed to retrieve profile',
                 'error' => $e->getMessage()
             ], 500);
+        } finally {
+            // Increment profile views outside cache (fire and forget)
+            try {
+                if (isset($userId)) {
+                    \DB::table('profiles')->where('user_id', $userId)->increment('profile_views');
+                }
+            } catch (\Exception $e) {
+                // Log but don't fail request
+                \Log::warning('Failed to increment profile views', ['user_id' => $userId, 'error' => $e->getMessage()]);
+            }
         }
     }
 
@@ -315,7 +348,7 @@ class ProfileController extends Controller
     {
         try {
             $currentUser = $request->user();
-            $targetUser = User::findOrFail($userId);
+            $targetUser = User::with('profile:id,user_id,first_name,last_name')->findOrFail($userId);
 
             if ($currentUser->id === $targetUser->id) {
                 return response()->json([
@@ -346,6 +379,10 @@ class ProfileController extends Controller
             // Remove any existing matches between the users
             $currentUser->matches()->where('matched_user_id', $targetUser->id)->delete();
             $targetUser->matches()->where('matched_user_id', $currentUser->id)->delete();
+
+            // Clear relationship caches for both users
+            $this->cacheService->invalidateUserCaches($currentUser->id);
+            $this->cacheService->invalidateUserCaches($targetUser->id);
 
             return response()->json([
                 'status' => 'success',
@@ -378,7 +415,7 @@ class ProfileController extends Controller
     {
         try {
             $currentUser = $request->user();
-            $targetUser = User::findOrFail($userId);
+            $targetUser = User::with('profile:id,user_id,first_name,last_name')->findOrFail($userId);
 
             if ($currentUser->id === $targetUser->id) {
                 return response()->json([
@@ -410,6 +447,9 @@ class ProfileController extends Controller
                 'metadata' => $validated['metadata'] ?? null,
                 'status' => 'pending'
             ]);
+
+            // Clear relationship caches for the reporting user
+            $this->cacheService->invalidateUserCaches($currentUser->id);
 
             return response()->json([
                 'status' => 'success',
@@ -459,15 +499,24 @@ class ProfileController extends Controller
             'last_name' => $profile->last_name,
             'gender' => $profile->gender,
             'age' => $profile->age,
+            'date_of_birth' => $profile->date_of_birth,
             'city' => $profile->city,
             'state' => $profile->state,
             'province' => $profile->province,
             'country' => $profile->country,
             'bio' => $profile->bio,
+            'latitude' => $profile->latitude,
+            'longitude' => $profile->longitude,
             'profession' => $profile->profession,
             'occupation' => $profile->occupation,
+            'education' => $profile->education ?? null,
+            'height' => $profile->height ?? null,
+            'religion' => $profile->religion ?? null,
+            'drinking' => $profile->drinking ?? null,
+            'smoking' => $profile->smoking ?? null,
+            'languages' => $profile->languages ?? null,
             'interests' => $profile->interests,
-            'looking_for' => $profile->looking_for,
+            'looking_for_relationship' => $profile->looking_for_relationship,
             'profile_views' => $profile->profile_views,
             'profile_completed_at' => $profile->profile_completed_at,
             'created_at' => $profile->created_at,
@@ -526,7 +575,16 @@ class ProfileController extends Controller
 
         // Add profile completion data for own profile
         if ($includePrivate) {
-            $data['completion'] = $this->calculateProfileCompletion($profile);
+            $completionData = $this->calculateProfileCompletion($profile);
+            $data['completion'] = $completionData;
+            $data['completion_percentage'] = $completionData['percentage'] ?? 0;
+            
+            // Add verification status
+            $data['verification_status'] = [
+                'identity_verified' => false,  // Simplified for now
+                'photo_verified' => false,      // Simplified for now
+                'employment_verified' => false  // Simplified for now
+            ];
         }
 
         return $data;
@@ -547,7 +605,7 @@ class ProfileController extends Controller
             'full_name' => $user->full_name,
             'gender' => $profile->gender,
             'age' => $profile->age,
-            'date_of_birth' => $includePrivate ? $profile->date_of_birth : null,
+            'date_of_birth' => $profile->date_of_birth,
             'city' => $profile->city,
             'state' => $profile->state,
             'province' => $profile->province,
@@ -556,7 +614,7 @@ class ProfileController extends Controller
             'profession' => $profile->profession,
             'occupation' => $profile->occupation,
             'interests' => $profile->interests,
-            'looking_for' => $profile->looking_for,
+            'looking_for_relationship' => $profile->looking_for_relationship,
             'profile_views' => $profile->profile_views,
             'profile_completed_at' => $profile->profile_completed_at,
             'created_at' => $profile->created_at,
@@ -696,6 +754,163 @@ class ProfileController extends Controller
             'missing_fields' => $missing,
             'total_fields' => $totalFields,
             'completed_count' => count($completed),
+        ];
+    }
+
+    /**
+     * Get discovery profiles for the grid view
+     */
+    public function getDiscoveryProfiles(Request $request)
+    {
+        try {
+            $user = Auth::user();
+            
+            if (!$user) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'User not authenticated'
+                ], 401);
+            }
+            
+            $page = $request->input('page', 1);
+            $filters = $request->input('filters', []);
+        
+        // Get excluded user IDs (already liked, disliked, or matched)
+        $excludedUserIds = collect()
+            ->merge(\App\Models\Like::where('user_id', $user->id)->pluck('liked_user_id'))
+            ->merge(\App\Models\Dislike::where('user_id', $user->id)->pluck('disliked_user_id'))
+            ->merge(\App\Models\MatchModel::where('user_id', $user->id)->pluck('matched_user_id'))
+            ->merge(\App\Models\MatchModel::where('matched_user_id', $user->id)->pluck('user_id'))
+            ->push($user->id) // Exclude current user
+            ->unique()
+            ->values()
+            ->toArray();
+        
+        // Build query with filters
+        $query = User::with([
+            'profile:user_id,first_name,last_name,age,bio,occupation,city,country_code',
+            'profilePhoto:id,user_id,original_url,thumbnail_url,medium_url',
+            'photos:id,user_id,original_url,thumbnail_url,medium_url,order',
+            'culturalProfile:user_id,ethnicity,religion,religiousness_level,spoken_languages',
+            'careerProfile:user_id,education_level,field_of_study,work_status,job_title'
+        ])
+        ->whereNotIn('id', $excludedUserIds)
+        ->where('registration_completed', true)
+        ->whereNull('disabled_at')
+        ->whereHas('profile')
+        ->whereHas('photos');
+        
+        // Apply age filter using pre-computed age column
+        if (!empty($filters['ageMin']) || !empty($filters['ageMax'])) {
+            $query->whereHas('profile', function($q) use ($filters) {
+                if (!empty($filters['ageMin'])) {
+                    $q->where('age', '>=', $filters['ageMin']);
+                }
+                if (!empty($filters['ageMax'])) {
+                    $q->where('age', '<=', $filters['ageMax']);
+                }
+            });
+        }
+        
+        // Apply profession filter
+        if (!empty($filters['profession'])) {
+            $query->whereHas('profile', function($q) use ($filters) {
+                $q->where('occupation', 'like', '%' . $filters['profession'] . '%');
+            });
+        }
+        
+        // Apply religion filter
+        if (!empty($filters['religion'])) {
+            $query->whereHas('culturalProfile', function($q) use ($filters) {
+                $q->where('religion', $filters['religion']);
+            });
+        }
+        
+        // Apply education filter
+        if (!empty($filters['education'])) {
+            $query->whereHas('careerProfile', function($q) use ($filters) {
+                $q->where('education_level', $filters['education']);
+            });
+        }
+        
+        $profiles = $query
+            ->orderBy('last_active_at', 'desc')
+            ->orderBy('created_at', 'desc')
+            ->take(20) // Load 20 profiles at a time
+            ->skip(($page - 1) * 20)
+            ->get()
+            ->map(function($profile) {
+                return $this->formatProfileData($profile);
+            });
+        
+        return response()->json([
+            'status' => 'success',
+            'profiles' => $profiles,
+            'hasMore' => count($profiles) === 20
+        ]);
+        
+        } catch (\Exception $e) {
+            \Log::error('Error in getDiscoveryProfiles: ' . $e->getMessage(), [
+                'user_id' => auth()->id(),
+                'page' => $request->input('page', 1),
+                'filters' => $request->input('filters', [])
+            ]);
+            
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to load profiles',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    private function formatProfileData($profile)
+    {
+        // Use pre-computed age from database
+        $age = $profile->profile?->age;
+            
+        // Calculate distance (mock for now)
+        $distance = rand(1, 50);
+        
+        // Get primary photo
+        $primaryPhoto = $profile->profilePhoto?->medium_url ?? 
+                       ($profile->photos->first()?->medium_url ?? null);
+        
+        // Get additional photos
+        $additionalPhotos = $profile->photos->take(5)->map(function($photo) {
+            return [
+                'id' => $photo->id,
+                'url' => $photo->medium_url,
+                'thumbnail' => $photo->thumbnail_url
+            ];
+        })->toArray();
+        
+        // Calculate compatibility score (mock)
+        $compatibilityScore = rand(65, 95);
+        
+        return [
+            'id' => $profile->id,
+            'name' => $profile->profile?->first_name ?? 'User',
+            'age' => $age,
+            'distance' => $distance,
+            'location' => $profile->profile?->city ?? 'Unknown',
+            'bio' => $profile->profile?->bio,
+            'occupation' => $profile->profile?->occupation,
+            'primary_photo' => $primaryPhoto,
+            'photos' => $additionalPhotos,
+            'compatibility_score' => $compatibilityScore,
+            'is_online' => $profile->last_active_at && $profile->last_active_at->gt(now()->subMinutes(5)),
+            'verified' => $profile->email_verified_at !== null,
+            
+            // Profile completion indicators
+            'has_bio' => !empty($profile->profile?->bio),
+            'has_occupation' => !empty($profile->profile?->occupation),
+            'photos_count' => $profile->photos->count(),
+            
+            // Cultural/Religious info
+            'religion' => $profile->culturalProfile?->religion,
+            'education' => $profile->careerProfile?->education_level,
+            'religiousness' => $profile->culturalProfile?->religiousness_level,
         ];
     }
 }

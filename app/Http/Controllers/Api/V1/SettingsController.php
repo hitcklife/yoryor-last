@@ -4,12 +4,19 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\UserSetting;
+use App\Services\CacheService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
 
 class SettingsController extends Controller
 {
+    protected $cacheService;
+
+    public function __construct(CacheService $cacheService)
+    {
+        $this->cacheService = $cacheService;
+    }
     /**
      * Get all user settings
      *
@@ -18,20 +25,36 @@ class SettingsController extends Controller
      */
     public function getAllSettings(Request $request): JsonResponse
     {
-        $user = $request->user();
-        $settings = $user->settings;
+        try {
+            $user = $request->user();
 
-        if (!$settings) {
-            // Create default settings if none exist
-            $settings = UserSetting::create([
-                'user_id' => $user->id,
-            ]);
+            return $this->cacheService->remember(
+                "user_settings:{$user->id}",
+                CacheService::TTL_MEDIUM,
+                function() use ($user) {
+                    $settings = $user->settings;
+
+                    if (!$settings) {
+                        // Create default settings if none exist
+                        $settings = UserSetting::create([
+                            'user_id' => $user->id,
+                        ]);
+                    }
+
+                    return response()->json([
+                        'status' => 'success',
+                        'data' => $settings
+                    ]);
+                },
+                ["user_{$user->id}_settings"]
+            );
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to get settings',
+                'error' => $e->getMessage()
+            ], 500);
         }
-
-        return response()->json([
-            'success' => true,
-            'data' => $settings
-        ]);
     }
 
     /**
@@ -112,7 +135,8 @@ class SettingsController extends Controller
 
         if ($validator->fails()) {
             return response()->json([
-                'success' => false,
+                'status' => 'error',
+                'message' => 'Validation failed',
                 'errors' => $validator->errors()
             ], 422);
         }
@@ -127,8 +151,11 @@ class SettingsController extends Controller
         $settings->fill($validator->validated());
         $settings->save();
 
+        // Clear user settings cache
+        $this->cacheService->invalidateUserCaches($user->id);
+
         return response()->json([
-            'success' => true,
+            'status' => 'success',
             'message' => 'Settings updated successfully',
             'data' => $settings
         ]);
@@ -142,38 +169,54 @@ class SettingsController extends Controller
      */
     public function getNotificationSettings(Request $request): JsonResponse
     {
-        $user = $request->user();
-        $settings = $user->settings;
+        try {
+            $user = $request->user();
 
-        if (!$settings) {
-            // Create default settings if none exist
-            $settings = UserSetting::create([
-                'user_id' => $user->id,
-            ]);
+            return $this->cacheService->remember(
+                "user_notification_settings:{$user->id}",
+                CacheService::TTL_MEDIUM,
+                function() use ($user) {
+                    $settings = $user->settings;
+
+                    if (!$settings) {
+                        // Create default settings if none exist
+                        $settings = UserSetting::create([
+                            'user_id' => $user->id,
+                        ]);
+                    }
+
+                    // Extract only notification-related settings
+                    $notificationSettings = [
+                        'notify_matches' => $settings->notify_matches,
+                        'notify_messages' => $settings->notify_messages,
+                        'notify_likes' => $settings->notify_likes,
+                        'notify_super_likes' => $settings->notify_super_likes,
+                        'notify_visitors' => $settings->notify_visitors,
+                        'notify_new_features' => $settings->notify_new_features,
+                        'notify_marketing' => $settings->notify_marketing,
+                        'push_notifications_enabled' => $settings->push_notifications_enabled,
+                        'in_app_sounds_enabled' => $settings->in_app_sounds_enabled,
+                        'vibration_enabled' => $settings->vibration_enabled,
+                        'quiet_hours_start' => $settings->quiet_hours_start,
+                        'quiet_hours_end' => $settings->quiet_hours_end,
+                        'email_notifications_enabled' => $settings->email_notifications_enabled,
+                        'marketing_emails_enabled' => $settings->marketing_emails_enabled,
+                    ];
+
+                    return response()->json([
+                        'status' => 'success',
+                        'data' => $notificationSettings
+                    ]);
+                },
+                ["user_{$user->id}_settings"]
+            );
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to get notification settings',
+                'error' => $e->getMessage()
+            ], 500);
         }
-
-        // Extract only notification-related settings
-        $notificationSettings = [
-            'notify_matches' => $settings->notify_matches,
-            'notify_messages' => $settings->notify_messages,
-            'notify_likes' => $settings->notify_likes,
-            'notify_super_likes' => $settings->notify_super_likes,
-            'notify_visitors' => $settings->notify_visitors,
-            'notify_new_features' => $settings->notify_new_features,
-            'notify_marketing' => $settings->notify_marketing,
-            'push_notifications_enabled' => $settings->push_notifications_enabled,
-            'in_app_sounds_enabled' => $settings->in_app_sounds_enabled,
-            'vibration_enabled' => $settings->vibration_enabled,
-            'quiet_hours_start' => $settings->quiet_hours_start,
-            'quiet_hours_end' => $settings->quiet_hours_end,
-            'email_notifications_enabled' => $settings->email_notifications_enabled,
-            'marketing_emails_enabled' => $settings->marketing_emails_enabled,
-        ];
-
-        return response()->json([
-            'success' => true,
-            'data' => $notificationSettings
-        ]);
     }
 
     /**
@@ -206,7 +249,8 @@ class SettingsController extends Controller
 
         if ($validator->fails()) {
             return response()->json([
-                'success' => false,
+                'status' => 'error',
+                'message' => 'Validation failed',
                 'errors' => $validator->errors()
             ], 422);
         }
@@ -221,8 +265,11 @@ class SettingsController extends Controller
         $settings->fill($validator->validated());
         $settings->save();
 
+        // Clear user settings cache
+        $this->cacheService->invalidateUserCaches($user->id);
+
         return response()->json([
-            'success' => true,
+            'status' => 'success',
             'message' => 'Notification settings updated successfully',
             'data' => $validator->validated()
         ]);
@@ -236,37 +283,53 @@ class SettingsController extends Controller
      */
     public function getPrivacySettings(Request $request): JsonResponse
     {
-        $user = $request->user();
-        $settings = $user->settings;
+        try {
+            $user = $request->user();
 
-        if (!$settings) {
-            // Create default settings if none exist
-            $settings = UserSetting::create([
-                'user_id' => $user->id,
-            ]);
+            return $this->cacheService->remember(
+                "user_privacy_settings:{$user->id}",
+                CacheService::TTL_MEDIUM,
+                function() use ($user) {
+                    $settings = $user->settings;
+
+                    if (!$settings) {
+                        // Create default settings if none exist
+                        $settings = UserSetting::create([
+                            'user_id' => $user->id,
+                        ]);
+                    }
+
+                    // Extract only privacy-related settings
+                    $privacySettings = [
+                        'profile_visible' => $settings->profile_visible,
+                        'profile_visibility_level' => $settings->profile_visibility_level,
+                        'show_online_status' => $settings->show_online_status,
+                        'show_distance' => $settings->show_distance,
+                        'show_age' => $settings->show_age,
+                        'age_display_type' => $settings->age_display_type,
+                        'show_last_active' => $settings->show_last_active,
+                        'allow_messages_from_matches' => $settings->allow_messages_from_matches,
+                        'allow_messages_from_all' => $settings->allow_messages_from_all,
+                        'show_read_receipts' => $settings->show_read_receipts,
+                        'prevent_screenshots' => $settings->prevent_screenshots,
+                        'hide_from_contacts' => $settings->hide_from_contacts,
+                        'incognito_mode' => $settings->incognito_mode,
+                    ];
+
+                    return response()->json([
+                        'status' => 'success',
+                        'data' => $privacySettings
+                    ]);
+                },
+                ["user_{$user->id}_settings"]
+            );
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to get privacy settings',
+                'error' => $e->getMessage()
+            ], 500);
         }
-
-        // Extract only privacy-related settings
-        $privacySettings = [
-            'profile_visible' => $settings->profile_visible,
-            'profile_visibility_level' => $settings->profile_visibility_level,
-            'show_online_status' => $settings->show_online_status,
-            'show_distance' => $settings->show_distance,
-            'show_age' => $settings->show_age,
-            'age_display_type' => $settings->age_display_type,
-            'show_last_active' => $settings->show_last_active,
-            'allow_messages_from_matches' => $settings->allow_messages_from_matches,
-            'allow_messages_from_all' => $settings->allow_messages_from_all,
-            'show_read_receipts' => $settings->show_read_receipts,
-            'prevent_screenshots' => $settings->prevent_screenshots,
-            'hide_from_contacts' => $settings->hide_from_contacts,
-            'incognito_mode' => $settings->incognito_mode,
-        ];
-
-        return response()->json([
-            'success' => true,
-            'data' => $privacySettings
-        ]);
     }
 
     /**
@@ -298,7 +361,8 @@ class SettingsController extends Controller
 
         if ($validator->fails()) {
             return response()->json([
-                'success' => false,
+                'status' => 'error',
+                'message' => 'Validation failed',
                 'errors' => $validator->errors()
             ], 422);
         }
@@ -313,8 +377,11 @@ class SettingsController extends Controller
         $settings->fill($validator->validated());
         $settings->save();
 
+        // Clear user settings cache
+        $this->cacheService->invalidateUserCaches($user->id);
+
         return response()->json([
-            'success' => true,
+            'status' => 'success',
             'message' => 'Privacy settings updated successfully',
             'data' => $validator->validated()
         ]);
@@ -328,35 +395,51 @@ class SettingsController extends Controller
      */
     public function getDiscoverySettings(Request $request): JsonResponse
     {
-        $user = $request->user();
-        $settings = $user->settings;
+        try {
+            $user = $request->user();
 
-        if (!$settings) {
-            // Create default settings if none exist
-            $settings = UserSetting::create([
-                'user_id' => $user->id,
-            ]);
+            return $this->cacheService->remember(
+                "user_discovery_settings:{$user->id}",
+                CacheService::TTL_MEDIUM,
+                function() use ($user) {
+                    $settings = $user->settings;
+
+                    if (!$settings) {
+                        // Create default settings if none exist
+                        $settings = UserSetting::create([
+                            'user_id' => $user->id,
+                        ]);
+                    }
+
+                    // Extract only discovery-related settings
+                    $discoverySettings = [
+                        'show_me_on_discovery' => $settings->show_me_on_discovery,
+                        'global_mode' => $settings->global_mode,
+                        'recently_active_only' => $settings->recently_active_only,
+                        'verified_profiles_only' => $settings->verified_profiles_only,
+                        'hide_already_seen_profiles' => $settings->hide_already_seen_profiles,
+                        'smart_photos' => $settings->smart_photos,
+                        'min_age' => $settings->min_age,
+                        'max_age' => $settings->max_age,
+                        'max_distance' => $settings->max_distance,
+                        'looking_for_preferences' => $settings->looking_for_preferences,
+                        'interest_preferences' => $settings->interest_preferences,
+                    ];
+
+                    return response()->json([
+                        'status' => 'success',
+                        'data' => $discoverySettings
+                    ]);
+                },
+                ["user_{$user->id}_settings"]
+            );
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to get discovery settings',
+                'error' => $e->getMessage()
+            ], 500);
         }
-
-        // Extract only discovery-related settings
-        $discoverySettings = [
-            'show_me_on_discovery' => $settings->show_me_on_discovery,
-            'global_mode' => $settings->global_mode,
-            'recently_active_only' => $settings->recently_active_only,
-            'verified_profiles_only' => $settings->verified_profiles_only,
-            'hide_already_seen_profiles' => $settings->hide_already_seen_profiles,
-            'smart_photos' => $settings->smart_photos,
-            'min_age' => $settings->min_age,
-            'max_age' => $settings->max_age,
-            'max_distance' => $settings->max_distance,
-            'looking_for_preferences' => $settings->looking_for_preferences,
-            'interest_preferences' => $settings->interest_preferences,
-        ];
-
-        return response()->json([
-            'success' => true,
-            'data' => $discoverySettings
-        ]);
     }
 
     /**
@@ -386,7 +469,8 @@ class SettingsController extends Controller
 
         if ($validator->fails()) {
             return response()->json([
-                'success' => false,
+                'status' => 'error',
+                'message' => 'Validation failed',
                 'errors' => $validator->errors()
             ], 422);
         }
@@ -401,8 +485,11 @@ class SettingsController extends Controller
         $settings->fill($validator->validated());
         $settings->save();
 
+        // Clear user settings cache
+        $this->cacheService->invalidateUserCaches($user->id);
+
         return response()->json([
-            'success' => true,
+            'status' => 'success',
             'message' => 'Discovery settings updated successfully',
             'data' => $validator->validated()
         ]);
@@ -416,32 +503,48 @@ class SettingsController extends Controller
      */
     public function getSecuritySettings(Request $request): JsonResponse
     {
-        $user = $request->user();
-        $settings = $user->settings;
+        try {
+            $user = $request->user();
 
-        if (!$settings) {
-            // Create default settings if none exist
-            $settings = UserSetting::create([
-                'user_id' => $user->id,
-            ]);
+            return $this->cacheService->remember(
+                "user_security_settings:{$user->id}",
+                CacheService::TTL_MEDIUM,
+                function() use ($user) {
+                    $settings = $user->settings;
+
+                    if (!$settings) {
+                        // Create default settings if none exist
+                        $settings = UserSetting::create([
+                            'user_id' => $user->id,
+                        ]);
+                    }
+
+                    // Extract only security-related settings
+                    $securitySettings = [
+                        'two_factor_enabled' => $settings->two_factor_enabled,
+                        'photo_verification_enabled' => $settings->photo_verification_enabled,
+                        'id_verification_enabled' => $settings->id_verification_enabled,
+                        'phone_verification_enabled' => $settings->phone_verification_enabled,
+                        'social_media_verification_enabled' => $settings->social_media_verification_enabled,
+                        'login_alerts_enabled' => $settings->login_alerts_enabled,
+                        'block_screenshots' => $settings->block_screenshots,
+                        'hide_from_facebook' => $settings->hide_from_facebook,
+                    ];
+
+                    return response()->json([
+                        'status' => 'success',
+                        'data' => $securitySettings
+                    ]);
+                },
+                ["user_{$user->id}_settings"]
+            );
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to get security settings',
+                'error' => $e->getMessage()
+            ], 500);
         }
-
-        // Extract only security-related settings
-        $securitySettings = [
-            'two_factor_enabled' => $settings->two_factor_enabled,
-            'photo_verification_enabled' => $settings->photo_verification_enabled,
-            'id_verification_enabled' => $settings->id_verification_enabled,
-            'phone_verification_enabled' => $settings->phone_verification_enabled,
-            'social_media_verification_enabled' => $settings->social_media_verification_enabled,
-            'login_alerts_enabled' => $settings->login_alerts_enabled,
-            'block_screenshots' => $settings->block_screenshots,
-            'hide_from_facebook' => $settings->hide_from_facebook,
-        ];
-
-        return response()->json([
-            'success' => true,
-            'data' => $securitySettings
-        ]);
     }
 
     /**
@@ -468,7 +571,8 @@ class SettingsController extends Controller
 
         if ($validator->fails()) {
             return response()->json([
-                'success' => false,
+                'status' => 'error',
+                'message' => 'Validation failed',
                 'errors' => $validator->errors()
             ], 422);
         }
@@ -483,8 +587,11 @@ class SettingsController extends Controller
         $settings->fill($validator->validated());
         $settings->save();
 
+        // Clear user settings cache
+        $this->cacheService->invalidateUserCaches($user->id);
+
         return response()->json([
-            'success' => true,
+            'status' => 'success',
             'message' => 'Security settings updated successfully',
             'data' => $validator->validated()
         ]);

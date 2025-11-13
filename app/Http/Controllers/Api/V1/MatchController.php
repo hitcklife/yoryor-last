@@ -9,6 +9,7 @@ use App\Http\Resources\UserCollection;
 use App\Http\Resources\UserResource;
 use App\Models\MatchModel;
 use App\Models\User;
+use App\Services\CacheService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
@@ -23,6 +24,13 @@ use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 class MatchController extends Controller
 {
     use AuthorizesRequests;
+    
+    protected CacheService $cacheService;
+
+    public function __construct(CacheService $cacheService)
+    {
+        $this->cacheService = $cacheService;
+    }
     /**
      * Get potential matches for the authenticated user
      *
@@ -117,10 +125,7 @@ class MatchController extends Controller
         $perPage = $request->input('per_page', 10);
         $page = $request->input('page', 1);
 
-        // Use cache to improve performance
-        $cacheKey = "potential_matches_{$user->id}_page_{$page}_per_{$perPage}";
-
-        return \Cache::remember($cacheKey, now()->addMinutes(5), function() use ($user, $perPage, $page) {
+        return $this->cacheService->cachePotentialMatches($user->id, $page, $perPage, function() use ($user, $perPage) {
             // Start with base query using joins for better performance
             $query = User::select('users.*')
                 ->join('profiles', 'users.id', '=', 'profiles.user_id')
@@ -154,9 +159,16 @@ class MatchController extends Controller
             // Add ordering for better user experience
             $query->orderBy('users.last_active_at', 'desc');
 
-            // Optimized eager loading - only load what we need
+            // Optimized eager loading - load comprehensive profile data too
             $potentialMatches = $query->with([
                 'profile:id,user_id,first_name,last_name,gender,date_of_birth,city,state,province,country_id,latitude,longitude,bio,profession,interests,status,looking_for',
+                'profile.country',
+                'preference',
+                'culturalProfile',
+                'familyPreference',
+                'locationPreference',
+                'careerProfile',
+                'physicalProfile',
                 'photos' => function($query) {
                     $query->where('is_private', false)
                           ->where(function($q) {
@@ -172,12 +184,60 @@ class MatchController extends Controller
             // Log performance metrics
             \Log::info('Potential matches performance:', [
                 'total_users' => $potentialMatches->total(),
-                'query_time' => round(microtime(true) - LARAVEL_START, 3) . 's',
+                'query_time' => round(microtime(true) - (defined('LARAVEL_START') ? LARAVEL_START : $_SERVER['REQUEST_TIME_FLOAT'] ?? microtime(true)), 3) . 's',
                 'memory_usage' => round(memory_get_usage() / 1024 / 1024, 2) . 'MB',
             ]);
 
-            return (new UserCollection($potentialMatches))
-                ->additional(['status' => 'success']);
+            // Transform users to include comprehensive profile data if available
+            $transformedUsers = $potentialMatches->getCollection()->map(function ($user) {
+                $userData = $user->toArray();
+                
+                // Check if user has comprehensive profile data completed
+                $hasComprehensiveProfile = $user->preference || $user->culturalProfile || 
+                                         $user->familyPreference || $user->locationPreference || 
+                                         $user->careerProfile || $user->physicalProfile;
+                
+                if ($hasComprehensiveProfile) {
+                    // Format basic profile to include country
+                    $basicProfile = $user->profile ? $user->profile->toArray() : null;
+                    if ($basicProfile && $user->profile && $user->profile->country) {
+                        $basicProfile['country'] = $user->profile->country->toArray();
+                    }
+                    
+                    $userData['comprehensive_profile'] = [
+                        'basic_profile' => $basicProfile,
+                        'preferences' => $user->preference,
+                        'cultural_profile' => $user->culturalProfile,
+                        'family_preferences' => $user->familyPreference,
+                        'location_preferences' => $user->locationPreference,
+                        'career_profile' => $user->careerProfile,
+                        'physical_profile' => $user->physicalProfile,
+                        'has_comprehensive_profile' => true
+                    ];
+                } else {
+                    $userData['comprehensive_profile'] = [
+                        'has_comprehensive_profile' => false
+                    ];
+                }
+                
+                return $userData;
+            });
+
+            return response()->json([
+                'status' => 'success',
+                'data' => [
+                    'users' => $transformedUsers,
+                    'pagination' => [
+                        'total' => $potentialMatches->total(),
+                        'per_page' => $potentialMatches->perPage(),
+                        'current_page' => $potentialMatches->currentPage(),
+                        'last_page' => $potentialMatches->lastPage(),
+                        'has_more_pages' => $potentialMatches->hasMorePages(),
+                        'from' => $potentialMatches->firstItem(),
+                        'to' => $potentialMatches->lastItem()
+                    ]
+                ]
+            ]);
         });
 
     } catch (\Exception $e) {
@@ -331,10 +391,8 @@ class MatchController extends Controller
                 }
 
                 // Clear any cached data that might be affected by this change
-                \Cache::forget('user_' . $user->id . '_matches_page_1_per_10_mutual_0');
-                \Cache::forget('user_' . $matchedUserId . '_matches_page_1_per_10_mutual_0');
-                \Cache::forget('potential_matches_' . $user->id . '_page_1_per_10');
-                \Cache::forget('potential_matches_' . $matchedUserId . '_page_1_per_10');
+                $this->cacheService->invalidateUserCaches($user->id);
+                $this->cacheService->invalidateUserCaches($matchedUserId);
 
                 // Set additional properties for the resource
                 $match->is_mutual = $mutualMatch;
@@ -342,13 +400,16 @@ class MatchController extends Controller
                     $match->chat = $chat;
                 }
 
-                return (new MatchResource($match))
-                    ->additional([
-                        'status' => 'success',
-                        'message' => 'Match created successfully',
-                    ])
-                    ->response()
-                    ->setStatusCode(201);
+                return response()->json([
+                    'status' => 'success',
+                    'message' => 'Match created successfully',
+                    'data' => [
+                        'match' => $match,
+                        'is_mutual' => $mutualMatch,
+                        'chat_created' => $mutualMatch && $chat ? true : false,
+                        'chat_id' => $mutualMatch && $chat ? $chat->id : null
+                    ]
+                ], 201);
             });
         } catch (\Exception $e) {
             return response()->json([
@@ -458,11 +519,9 @@ class MatchController extends Controller
             $user = $request->user();
             $perPage = $request->input('per_page', 10);
 
-            // Generate cache key based on request parameters
-            $cacheKey = "user_{$user->id}_matches_page_{$request->input('page', 1)}_per_{$perPage}";
+            $page = $request->input('page', 1);
 
-            // Try to get from cache first
-            return \Cache::remember($cacheKey, now()->addMinutes(5), function () use ($user, $perPage) {
+            return $this->cacheService->cacheUserMatches($user->id, $page, $perPage, function () use ($user, $perPage) {
                 // Get matches where user is either user_id or matched_user_id
                 $matches = MatchModel::where(function ($query) use ($user) {
                     $query->where('user_id', $user->id)
